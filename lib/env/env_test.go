@@ -15,14 +15,13 @@
 package env_test
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
-	. "github.com/onsi/gomega"
-
 	"os"
 	"reflect"
 
 	"github.com/alien-bunny/ab/lib/env"
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/gomega"
 )
 
 type data struct {
@@ -64,7 +63,8 @@ var _ = Describe("Env", func() {
 	DescribeTable("unmarshaling environment variables",
 		func(e map[string]string, expected interface{}, prefix string) {
 			for k, v := range e {
-				os.Setenv(k, v)
+				err := os.Setenv(k, v)
+				Expect(err).NotTo(HaveOccurred())
 			}
 
 			v := reflect.New(reflect.Indirect(reflect.ValueOf(expected)).Type()).Interface()

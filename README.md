@@ -1,5 +1,10 @@
 # Alien Bunny
 
+[![Build Status](https://travis-ci.org/alien-bunny/ab.svg?branch=v1)](https://travis-ci.org/alien-bunny/ab)
+[![codecov](https://codecov.io/gh/alien-bunny/ab/branch/v1/graph/badge.svg)](https://codecov.io/gh/alien-bunny/ab)
+[![Go Report Card](https://goreportcard.com/badge/github.com/alien-bunny/ab)](https://goreportcard.com/report/github.com/alien-bunny/ab)
+[![CodeFactor](https://www.codefactor.io/repository/github/alien-bunny/ab/badge)](https://www.codefactor.io/repository/github/alien-bunny/ab)
+
 Web development platform.
 
 ## Getting started

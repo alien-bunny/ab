@@ -17,9 +17,8 @@ package env
 import (
 	"os"
 	"reflect"
-	"strings"
-
 	"strconv"
+	"strings"
 
 	"github.com/alien-bunny/ab/lib/errors"
 )
@@ -80,6 +79,7 @@ func (u *Unmarshaler) Unmarshal(v interface{}) (err error) {
 }
 
 func (u *Unmarshaler) unmarshal(current string, rv reflect.Value) {
+	current = strings.ToUpper(current)
 	switch rv.Kind() {
 	case reflect.Bool:
 		if val, found := u.Loader(current); found {

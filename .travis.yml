@@ -1,0 +1,41 @@
+language: go
+addons:
+  postgresql: "10"
+  apt:
+    packages:
+      - postgresql-10
+      - postgresql-client-10
+services:
+  - postgresql
+
+env:
+  global:
+    - AB_TEST_DB="dbname=travis user=travis password=travis sslmode=disable port=5433"
+    - VERBOSE=1
+    - DEP_VERSION="0.4.1"
+    - PGPORT="5433"
+
+go:
+  - "1.10.x"
+  - tip
+
+matrix:
+  allow_failures:
+    - go: tip
+
+before_install:
+  - curl -L -s https://github.com/golang/dep/releases/download/v${DEP_VERSION}/dep-linux-amd64 -o $GOPATH/bin/dep
+  - chmod +x $GOPATH/bin/dep
+
+before_script:
+  - psql -p 5433 -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+  - psql -p 5433 -c "ALTER USER travis WITH PASSWORD 'travis';"
+
+install:
+  - dep ensure -v
+
+script:
+  - ./scripts/ci-test.sh
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
