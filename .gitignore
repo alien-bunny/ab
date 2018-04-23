@@ -1,0 +1,9 @@
+.idea
+*.iml
+*~
+node_modules
+js/dist
+*.coverprofile
+.env
+.vimrc
+vendor
