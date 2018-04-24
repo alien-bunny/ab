@@ -93,9 +93,14 @@ func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.
 	conf := config.NewStore(logger)
 	conf.RegisterSchema("config", reflect.TypeOf(Config{}))
 	defaultCollection := config.NewCollection()
+	directoryConfigProvider := config.NewDirectoryConfigProvider(".", true)
+	directoryConfigProvider.RegisterFiletype(&config.JSON{})
+	directoryConfigProvider.RegisterFiletype(&config.YAML{})
+	directoryConfigProvider.RegisterFiletype(&config.TOML{})
+	directoryConfigProvider.RegisterFiletype(&config.XML{})
 	defaultCollection.AddProviders(
 		config.NewEnvConfigProvider(),
-		config.NewDirectoryConfigProvider(".", true),
+		directoryConfigProvider,
 	)
 	conf.AddCollection(config.Default, defaultCollection)
 
