@@ -430,6 +430,10 @@ func getConfig(conf *config.Store, namespace string, logger log.Logger) Config {
 		logger.Log("configuration load", err)
 		os.Exit(1)
 	}
+	if serverConfigInterface == nil {
+		logger.Log("configuration load", "server config not found")
+		os.Exit(1)
+	}
 	return serverConfigInterface.(Config)
 }
 
