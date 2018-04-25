@@ -55,10 +55,11 @@ const (
 func init() {
 	RegisterSiteProvider("directory", func(conf map[string]string, readOnly bool) config.CollectionLoader {
 		return config.CollectionLoaderFunc(func(name string) (*config.Collection, error) {
-			dir, found := conf[name]
-			if !found {
-				return nil, config.CollectionNotFoundError{Name: name}
+			if alias, found := conf[name]; found {
+				name = alias
 			}
+
+			dir := filepath.Join("sites", name)
 
 			info, err := os.Stat(dir)
 			if err != nil {
@@ -70,7 +71,7 @@ func init() {
 
 			c := config.NewCollection()
 			c.SetTemporary(true)
-			p := config.NewDirectoryConfigProvider("sites", readOnly)
+			p := config.NewDirectoryConfigProvider(dir, readOnly)
 			c.AddProviders(p)
 
 			return c, nil
@@ -84,6 +85,10 @@ var siteProviders = make(map[string]SiteProvider)
 
 func RegisterSiteProvider(name string, provider SiteProvider) {
 	siteProviders[name] = provider
+}
+
+func GetSiteProvider(name string) SiteProvider {
+	return siteProviders[name]
 }
 
 func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.Logger) error {
@@ -145,7 +150,11 @@ func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.
 		}
 	}
 
-	if provider := siteProviders[serverConfig.Config.Provider]; provider != nil {
+	if serverConfig.Config.Provider == "" {
+		serverConfig.Config.Provider = "directory"
+	}
+
+	if provider := GetSiteProvider(serverConfig.Config.Provider); provider != nil {
 		if loader := provider(serverConfig.Config.Config, serverConfig.Config.ReadOnly); loader != nil {
 			conf.AddCollectionLoaders(loader)
 		} else {
