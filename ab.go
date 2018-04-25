@@ -72,6 +72,10 @@ func init() {
 			c := config.NewCollection()
 			c.SetTemporary(true)
 			p := config.NewDirectoryConfigProvider(dir, readOnly)
+			p.RegisterFiletype(&config.JSON{})
+			p.RegisterFiletype(&config.YAML{})
+			p.RegisterFiletype(&config.TOML{})
+			p.RegisterFiletype(&config.XML{})
 			c.AddProviders(p)
 
 			return c, nil
