@@ -19,6 +19,7 @@ import (
 
 	"github.com/alien-bunny/ab/lib/log"
 	"github.com/alien-bunny/ab/tools/decrypt"
+	"github.com/alien-bunny/ab/tools/gencert"
 	"github.com/alien-bunny/ab/tools/gensecret"
 	"github.com/alien-bunny/ab/tools/scaffold"
 	"github.com/alien-bunny/ab/tools/session"
@@ -40,6 +41,7 @@ func main() {
 		sessioncmd.CreateSessionCMD(logger),
 		scaffoldcmd.CreateScaffoldCMD(logger),
 		versioncmd.CreateVersionCMD(logger),
+		gencert.CreateGencertCMD(logger),
 	)
 
 	abtCmd.Execute()

@@ -193,7 +193,7 @@ func serverConfig() ab.Config {
 		CryptSecret: hex.EncodeToString(FakeKey),
 	}
 
-	c.HostMap = map[string]string{
+	c.NamespaceNegotiation.HostMap = map[string]string{
 		"testhost": "test",
 	}
 
@@ -201,7 +201,7 @@ func serverConfig() ab.Config {
 	c.DB.MaxOpenConn = 1
 	c.DB.ConnectionMaxLifetime = 120
 
-	c.Cookie.Prefix = "AB_TEST_"
+	c.Cookie.Prefix = "AB_TEST"
 
 	c.Directories.Assets = "./fixtures/"
 

@@ -110,7 +110,7 @@ func (ms *Stack) collectDependencies() []string {
 	var deps []string
 
 	for current != nil {
-		for d, _ := range current.provided {
+		for d := range current.provided {
 			deps = append(deps, d)
 		}
 

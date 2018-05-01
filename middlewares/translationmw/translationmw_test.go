@@ -132,7 +132,7 @@ var _ = Describe("Incorrect Accept-Language", func() {
 
 var _ = Describe("Default language", func() {
 	stack := defaultStack(nil)
-	It("should return the default langauge when no information is provided", func() {
+	It("should return the default language when no information is provided", func() {
 		abtest.TestMiddleware(stack, func(w http.ResponseWriter, r *http.Request) {
 			Expect(translationmw.GetLanguage(r).String()).To(Equal("hu"))
 		})

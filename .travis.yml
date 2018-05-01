@@ -35,7 +35,7 @@ install:
   - dep ensure -v
 
 script:
-  - ./scripts/ci-test.sh
+  - ./scripts/test.sh
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)

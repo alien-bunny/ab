@@ -7,4 +7,4 @@ if [ -e .env ]; then
 	set +o allexport
 fi
 
-ginkgo ${@} -r -p --failOnPending --cover --trace --progress
+go test -race -p $(nproc) -coverprofile=coverage.txt -coverpkg=./... -covermode=atomic ./...

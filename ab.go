@@ -25,9 +25,12 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/NYTimes/gziphandler"
+	"github.com/alien-bunny/ab/lib/certcache"
+	"github.com/alien-bunny/ab/lib/collectionloader"
 	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/errors"
 	"github.com/alien-bunny/ab/lib/log"
@@ -54,32 +57,7 @@ const (
 
 func init() {
 	RegisterSiteProvider("directory", func(conf map[string]string, readOnly bool) config.CollectionLoader {
-		return config.CollectionLoaderFunc(func(name string) (*config.Collection, error) {
-			if alias, found := conf[name]; found {
-				name = alias
-			}
-
-			dir := filepath.Join("sites", name)
-
-			info, err := os.Stat(dir)
-			if err != nil {
-				return nil, err
-			}
-			if !info.IsDir() {
-				return nil, config.CollectionNotFoundError{Name: dir}
-			}
-
-			c := config.NewCollection()
-			c.SetTemporary(true)
-			p := config.NewDirectoryConfigProvider(dir, readOnly)
-			p.RegisterFiletype(&config.JSON{})
-			p.RegisterFiletype(&config.YAML{})
-			p.RegisterFiletype(&config.TOML{})
-			p.RegisterFiletype(&config.XML{})
-			c.AddProviders(p)
-
-			return c, nil
-		})
+		return collectionloader.NewDirectory("./sites", conf, readOnly)
 	})
 }
 
@@ -95,14 +73,98 @@ func GetSiteProvider(name string) SiteProvider {
 	return siteProviders[name]
 }
 
-func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.Logger) error {
-	if logger == nil {
-		logger = log.NewDevLogger(os.Stdout)
+// Hop sets up a server with the recommended settings.
+//
+// The configure function runs after the server is set up with middlewares. This is the place where endpoints and
+// services should be registered.
+//
+// The logger parameter is optional. If nil is passed, then a dev logger will be created, logging to os.Stdout.
+//
+// The basedir parameter is in which directory the server config is. An empty value will default to ".".
+//
+// The returned channel with either return an error very soon, or it will wait until SIGKILL/SIGTERM is received. The
+// channel is not read-only, so it can be closed. Sending something to the channel, or closing it will stop the server.
+// The idiomatic way to stop the server is to close the channel.
+func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.Logger, basedir string) chan error {
+	ret := make(chan error)
+
+	if basedir == "" {
+		basedir = "."
 	}
+
+	go func() {
+		if logger == nil {
+			logger = log.NewDevLogger(os.Stdout)
+		}
+		conf := setupConfig(logger, basedir)
+
+		s, err := Pet(conf, config.Default, logger)
+		if err != nil {
+			logger.Log("pet", err)
+			ret <- err
+			return
+		}
+
+		if err := configure(conf, s); err != nil {
+			logger.Log("server configuration", err)
+			ret <- err
+			return
+		}
+
+		serverConfig, err := getConfig(conf, config.Default, logger)
+		if err != nil {
+			ret <- err
+			return
+		}
+
+		if serverConfig.Config.Provider == "" {
+			serverConfig.Config.Provider = "directory"
+		}
+
+		if err = setupSites(conf, serverConfig); err != nil {
+			ret <- err
+			return
+		}
+
+		setupHTTPS(conf, logger, serverConfig, s)
+
+		stopch := make(chan os.Signal)
+		signal.Notify(stopch, os.Interrupt, syscall.SIGKILL, syscall.SIGTERM)
+
+		addr := serverConfig.Host + ":" + serverConfig.Port
+		go func() {
+			if err := s.StartHTTPS(addr, "", ""); err != nil && err != http.ErrServerClosed {
+				logger.Log("startserver", err)
+				ret <- err
+			}
+		}()
+
+		// Wait for either the program to get a signal or a cancellation.
+		select {
+		case <-stopch:
+			// Close the channel, so the caller waiting can exit.
+			defer close(ret)
+		case <-ret:
+		}
+
+		logger.Log("graceful", "received sigint")
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(serverConfig.Timeout)*time.Second)
+		if err := s.HTTPServer.Shutdown(ctx); err != nil {
+			logger.Log("graceful", "shutting down", "error", err)
+			cancel()
+		} else {
+			logger.Log("graceful", "stopped")
+		}
+	}()
+
+	return ret
+}
+
+func setupConfig(logger log.Logger, basedir string) *config.Store {
 	conf := config.NewStore(logger)
 	conf.RegisterSchema("config", reflect.TypeOf(Config{}))
 	defaultCollection := config.NewCollection()
-	directoryConfigProvider := config.NewDirectoryConfigProvider(".", true)
+	directoryConfigProvider := config.NewDirectoryConfigProvider(basedir, true)
 	directoryConfigProvider.RegisterFiletype(&config.JSON{})
 	directoryConfigProvider.RegisterFiletype(&config.YAML{})
 	directoryConfigProvider.RegisterFiletype(&config.TOML{})
@@ -113,28 +175,46 @@ func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.
 	)
 	conf.AddCollection(config.Default, defaultCollection)
 
-	s, err := Pet(conf, config.Default, logger)
-	if err != nil {
-		logger.Log("pet", err)
-		os.Exit(1)
+	return conf
+}
+
+func setupSites(conf *config.Store, serverConfig Config) error {
+	var loader config.CollectionLoader
+	if provider := GetSiteProvider(serverConfig.Config.Provider); provider != nil {
+		if loader = provider(serverConfig.Config.Config, serverConfig.Config.ReadOnly); loader != nil {
+			conf.AddCollectionLoaders(loader)
+		} else {
+			return errors.New("failed to initialize site config loader")
+		}
+	} else {
+		return errors.New("site config provider not found")
 	}
 
-	if err := configure(conf, s); err != nil {
-		logger.Log("server configuration", err)
-		os.Exit(1)
-	}
+	return nil
+}
 
-	serverConfig := getConfig(conf, config.Default, logger)
-
+func setupHTTPS(conf *config.Store, logger log.Logger, serverConfig Config, s *server.Server) {
 	if serverConfig.HTTPS.LetsEncrypt {
-		s.EnableLetsEncrypt("", hostPolicy(conf))
+		s.EnableLetsEncrypt("", hostPolicy(conf, logger))
 	} else if serverConfig.HTTPS.Autocert != "" {
-		s.EnableAutocert(serverConfig.HTTPS.Autocert, "", hostPolicy(conf))
-	} else if serverConfig.HTTPS.CertFile != "" && serverConfig.HTTPS.KeyFile != "" {
+		s.EnableAutocert(serverConfig.HTTPS.Autocert, "", hostPolicy(conf, logger))
+	} else if serverConfig.HTTPS.Site {
 		s.TLSConfig = &tls.Config{}
-		cc := newCertCache(conf, logger, serverConfig.HTTPS.CertFile, serverConfig.HTTPS.KeyFile)
-		s.TLSConfig.GetCertificate = cc.get
-		s.SubscribeCacheClear(cc.clear)
+		cc := certcache.New(logger, func(serverName string) (string, string, error) {
+			siteConfigInterface, err := conf.Get(serverName).Get("site")
+			if err != nil {
+				return "", "", err
+			}
+			if siteConfigInterface == nil {
+				return "", "", errors.New("config not found")
+			}
+
+			siteConfig := siteConfigInterface.(Site)
+
+			return siteConfig.TLS.Certificate, siteConfig.TLS.Key, nil
+		})
+		s.TLSConfig.GetCertificate = cc.Get
+		s.SubscribeCacheClear(cc.Clear)
 	}
 
 	if s.TLSConfig != nil {
@@ -153,47 +233,12 @@ func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 		}
 	}
-
-	if serverConfig.Config.Provider == "" {
-		serverConfig.Config.Provider = "directory"
-	}
-
-	if provider := GetSiteProvider(serverConfig.Config.Provider); provider != nil {
-		if loader := provider(serverConfig.Config.Config, serverConfig.Config.ReadOnly); loader != nil {
-			conf.AddCollectionLoaders(loader)
-		} else {
-			return errors.New("failed to initialize site config loader")
-		}
-	} else {
-		return errors.New("site config provider not found")
-	}
-
-	stopch := make(chan os.Signal)
-	signal.Notify(stopch, os.Interrupt)
-
-	addr := serverConfig.Host + ":" + serverConfig.Port
-	go func() {
-		if err := s.StartHTTPS(addr, "", ""); err != nil && err != http.ErrServerClosed {
-			logger.Log("startserver", err)
-			os.Exit(1)
-		}
-	}()
-	<-stopch
-
-	logger.Log("graceful", "received sigint")
-	ctx, _ := context.WithTimeout(context.Background(), time.Duration(serverConfig.Timeout)*time.Second)
-	if err := s.HTTPServer.Shutdown(ctx); err != nil {
-		logger.Log("graceful", "shutting down", "error", err)
-	} else {
-		logger.Log("graceful", "stopped")
-	}
-
-	return nil
 }
 
-func hostPolicy(conf *config.Store) autocert.HostPolicy {
+func hostPolicy(conf *config.Store, logger log.Logger) autocert.HostPolicy {
 	return func(ctx context.Context, host string) error {
 		if conf.Get(host) == nil {
+			log.Warn(logger).Log("certificate host not found", host)
 			return errors.New("site not found")
 		}
 
@@ -224,18 +269,20 @@ type Config struct {
 		Access        bool
 		DisplayErrors bool
 	}
-	Root          bool
-	Gzip          bool
-	DisableMaster bool
-	CryptSecret   string
-	Host          string
-	Port          string
-	HostMap       map[string]string
-	HTTPS         struct {
+	Root                 bool
+	Gzip                 bool
+	DisableMaster        bool
+	CryptSecret          string
+	Host                 string
+	Port                 string
+	NamespaceNegotiation struct {
+		HostMap  map[string]string
+		SkipPort bool
+	}
+	HTTPS struct {
 		LetsEncrypt bool
 		Autocert    string
-		CertFile    string
-		KeyFile     string
+		Site        bool
 	}
 	Timeout  int
 	Language struct {
@@ -247,9 +294,12 @@ type Config struct {
 type Site struct {
 	SupportedLanguages []string
 	Directories        struct {
-		Public     string
-		Private    string
-		TLSCertDir string
+		Public  string
+		Private string
+	}
+	TLS struct {
+		Certificate string
+		Key         string
 	}
 }
 
@@ -257,7 +307,10 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server
 	conf.RegisterSchema("config", reflect.TypeOf(Config{}))
 	conf.RegisterSchema("site", reflect.TypeOf(Site{}))
 
-	serverConfig := getConfig(conf, serverNamespace, logger)
+	serverConfig, err := getConfig(conf, serverNamespace, logger)
+	if err != nil {
+		return nil, err
+	}
 
 	s := server.NewServer(conf, logger)
 	s.Router.NotFound = simpleErrorPage(http.StatusNotFound)
@@ -273,98 +326,38 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server
 		s.Logger = log.With(s.Logger, "hostname", hostname)
 	}
 
-	s.Use(requestmw.NewRequestIDMiddleware())
-
-	if serverConfig.Log.Access {
-		s.Use(requestmw.NewRequestLoggerMiddleware(s.Logger))
-	}
-
-	if serverConfig.Gzip {
-		handler, err := gziphandler.GzipHandlerWithOpts(gziphandler.CompressionLevel(9))
-		if err != nil {
-			return nil, err
-		}
-		s.Use(middleware.Func(handler))
-	}
-
-	cn := configmw.NewChainedNamespaceNegotiator()
-	if len(serverConfig.HostMap) > 0 {
-		hostMapNamespaceNegotiator := configmw.NewHostMapNamespaceNegotiator()
-		for host, namespace := range serverConfig.HostMap {
-			hostMapNamespaceNegotiator.Add(host, namespace)
-		}
-		cn.AddNegotiator(hostMapNamespaceNegotiator)
-	}
-	cn.AddNegotiator(configmw.NewHostNamespaceNegotiator())
-
-	s.Use(configmw.NewConfigMiddleware(conf, cn))
-
 	s.UseHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Powered-By", "Alien-Bunny "+VERSION)
+		w.Header().Set("X-Powered-By", "Alien-Bunny "+VERSION)
 	}))
 
-	s.Use(logmw.New(s.Logger))
+	middlewareFactories := []func(Config) (middleware.Middleware, error){
+		setupRequestIDMiddleware,
+		setupAccessLogMiddleware(s),
+		setupGzipMiddleware,
+		setupConfigMiddleware(conf),
+		setupLogMiddleware(s),
+		setupHSTSMiddleware,
+		setupCookieMiddleware,
+		setupLanguageMiddleware(s),
+		setupErrorMiddleware,
+		setupRenderMiddleware,
+		setupCSRFMiddleware,
+		setupDBMiddleware,
+		setupCryptMiddleware,
+	}
 
-	s.Use(configmw.WrapMiddleware("hsts", reflect.TypeOf(securitymw.HSTSMiddleware{})))
+	for _, mf := range middlewareFactories {
+		mw, err := mf(serverConfig)
 
-	var expiresAfter time.Duration
-	if serverConfig.Cookie.ExpiresAfter == "" {
-		expiresAfter = time.Hour * 24 * 365
-	} else {
-		var err error
-		expiresAfter, err = time.ParseDuration(serverConfig.Cookie.ExpiresAfter)
 		if err != nil {
 			return nil, err
 		}
+
+		if mw != nil {
+			s.Use(mw)
+		}
 	}
-	s.Use(sessionmw.New(serverConfig.Cookie.Prefix, expiresAfter))
 
-	lang := language.English
-	if serverConfig.Language.Default != "" {
-		lang = language.MustParse(serverConfig.Language.Default)
-	}
-	tmw := translationmw.New(
-		s.Logger,
-		append(parseSupportedLanguages(serverConfig.Language.Supported), lang),
-		translationmw.URLParamLanguage("lang"),
-		translationmw.SessionLanguage{},
-		translationmw.CookieLanguage(serverConfig.Cookie.Prefix+"_LANGUAGE"),
-		translationmw.AcceptLanguage{},
-		translationmw.DynamicDefaultLanguage{},
-		translationmw.StaticDefaultLanguage(lang),
-	)
-	tmw.Filter = func(r *http.Request, tag language.Tag) bool {
-		s, err := configmw.GetConfig(r).Get("site")
-		if err != nil {
-			logmw.Warn(r, "language filter", configmw.CategoryConfigNotFound).Log("error", err)
-			return true
-		}
-		supported := s.(Site).SupportedLanguages
-		sl := make([]language.Tag, len(supported))
-		for i, s := range supported {
-			sl[i] = language.MustParse(s)
-		}
-
-		if len(sl) == 0 {
-			return true
-		}
-
-		ts := tag.String()
-		for _, l := range sl {
-			if l.String() == ts {
-				return true
-			}
-		}
-
-		return false
-	}
-	s.Use(tmw)
-
-	s.Use(errormw.New(serverConfig.Log.DisplayErrors))
-
-	s.Use(rendermw.New())
-
-	s.Use(securitymw.NewCSRFMiddleware())
 	s.GetF("/api/token", func(w http.ResponseWriter, r *http.Request) {
 		token := securitymw.GetCSRFToken(r)
 
@@ -372,25 +365,6 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server
 			JSON(map[string]string{"token": token}).
 			Text(token)
 	})
-
-	dbMiddleware := dbmw.NewMiddleware()
-	dbMiddleware.MaxIdleConnections = serverConfig.DB.MaxIdleConn
-	dbMiddleware.MaxOpenConnections = serverConfig.DB.MaxOpenConn
-	dbMiddleware.ConnectionMaxLifetime = time.Duration(serverConfig.DB.ConnectionMaxLifetime) * time.Second
-	s.Use(dbMiddleware)
-
-	if serverConfig.CryptSecret == "" {
-		return nil, errors.New("empty crypt secret")
-	}
-	cryptSecret, err := hex.DecodeString(serverConfig.CryptSecret)
-	if err != nil {
-		return nil, err
-	}
-	cmw, err := cryptmw.NewCryptMiddleware(cryptSecret)
-	if err != nil {
-		return nil, err
-	}
-	s.Use(cmw)
 
 	if serverConfig.Directories.Assets != "-" {
 		if serverConfig.Directories.Assets == "" {
@@ -419,8 +393,167 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server
 		return http.Dir(d)
 	})
 
-	if serverConfig.AdminKey != "" {
-		keymw := securitymw.AdminKeyMiddleware(serverConfig.AdminKey)
+	maybeSetupAdmin(s, serverConfig.AdminKey)
+
+	return s, nil
+}
+
+func setupRequestIDMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	return requestmw.NewRequestIDMiddleware(), nil
+}
+
+func setupAccessLogMiddleware(s *server.Server) func(serverConfig Config) (middleware.Middleware, error) {
+	return func(serverConfig Config) (middleware.Middleware, error) {
+		if serverConfig.Log.Access {
+			return requestmw.NewRequestLoggerMiddleware(s.Logger), nil
+		}
+
+		return nil, nil
+	}
+}
+
+func setupGzipMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	if serverConfig.Gzip {
+		handler, err := gziphandler.GzipHandlerWithOpts(gziphandler.CompressionLevel(9))
+		if err != nil {
+			return nil, err
+		}
+		return middleware.Func(handler), nil
+	}
+
+	return nil, nil
+}
+
+func setupConfigMiddleware(conf *config.Store) func(serverConfig Config) (middleware.Middleware, error) {
+	return func(serverConfig Config) (middleware.Middleware, error) {
+		cn := configmw.NewChainedNamespaceNegotiator()
+		if len(serverConfig.NamespaceNegotiation.HostMap) > 0 {
+			hostMapNamespaceNegotiator := configmw.NewHostMapNamespaceNegotiator()
+			for host, namespace := range serverConfig.NamespaceNegotiation.HostMap {
+				hostMapNamespaceNegotiator.Add(host, namespace)
+			}
+			cn.AddNegotiator(hostMapNamespaceNegotiator)
+		}
+		hostNamespaceNegotiator := configmw.NewHostNamespaceNegotiator()
+		hostNamespaceNegotiator.SkipPort = serverConfig.NamespaceNegotiation.SkipPort
+		cn.AddNegotiator(hostNamespaceNegotiator)
+		return configmw.NewConfigMiddleware(conf, cn), nil
+	}
+}
+
+func setupLogMiddleware(s *server.Server) func(serverConfig Config) (middleware.Middleware, error) {
+	return func(serverConfig Config) (middleware.Middleware, error) {
+		return logmw.New(s.Logger), nil
+	}
+}
+
+func setupHSTSMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	return configmw.WrapMiddleware("hsts", reflect.TypeOf(securitymw.HSTSMiddleware{})), nil
+}
+
+func setupCookieMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	var expiresAfter time.Duration
+	if serverConfig.Cookie.ExpiresAfter == "" {
+		expiresAfter = time.Hour * 24 * 365
+	} else {
+		var err error
+		expiresAfter, err = time.ParseDuration(serverConfig.Cookie.ExpiresAfter)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return sessionmw.New(serverConfig.Cookie.Prefix, expiresAfter), nil
+}
+
+func setupLanguageMiddleware(s *server.Server) func(serverConfig Config) (middleware.Middleware, error) {
+	return func(serverConfig Config) (middleware.Middleware, error) {
+		lang := language.English
+		if serverConfig.Language.Default != "" {
+			lang = language.MustParse(serverConfig.Language.Default)
+		}
+		tmw := translationmw.New(
+			s.Logger,
+			append(parseSupportedLanguages(serverConfig.Language.Supported), lang),
+			translationmw.URLParamLanguage("lang"),
+			translationmw.SessionLanguage{},
+			translationmw.CookieLanguage(serverConfig.Cookie.Prefix+"_LANGUAGE"),
+			translationmw.AcceptLanguage{},
+			translationmw.DynamicDefaultLanguage{},
+			translationmw.StaticDefaultLanguage(lang),
+		)
+		tmw.Filter = func(r *http.Request, tag language.Tag) bool {
+			s, err := configmw.GetConfig(r).Get("site")
+			if err != nil {
+				logmw.Warn(r, "language filter", configmw.CategoryConfigNotFound).Log("error", err)
+				return true
+			}
+			supported := s.(Site).SupportedLanguages
+			sl := make([]language.Tag, len(supported))
+			for i, s := range supported {
+				sl[i] = language.MustParse(s)
+			}
+
+			if len(sl) == 0 {
+				return true
+			}
+
+			ts := tag.String()
+			for _, l := range sl {
+				if l.String() == ts {
+					return true
+				}
+			}
+
+			return false
+		}
+
+		return tmw, nil
+	}
+}
+
+func setupErrorMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	return errormw.New(serverConfig.Log.DisplayErrors), nil
+}
+
+func setupRenderMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	return rendermw.New(), nil
+}
+
+func setupCSRFMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	return securitymw.NewCSRFMiddleware(), nil
+}
+
+func setupDBMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	dbMiddleware := dbmw.NewMiddleware()
+	dbMiddleware.MaxIdleConnections = serverConfig.DB.MaxIdleConn
+	dbMiddleware.MaxOpenConnections = serverConfig.DB.MaxOpenConn
+	dbMiddleware.ConnectionMaxLifetime = time.Duration(serverConfig.DB.ConnectionMaxLifetime) * time.Second
+
+	return dbMiddleware, nil
+}
+
+func setupCryptMiddleware(serverConfig Config) (middleware.Middleware, error) {
+	if serverConfig.CryptSecret == "" {
+		return nil, errors.New("empty crypt secret")
+	}
+
+	cryptSecret, err := hex.DecodeString(serverConfig.CryptSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	cmw, err := cryptmw.NewCryptMiddleware(cryptSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmw, nil
+}
+
+func maybeSetupAdmin(s *server.Server, adminKey string) {
+	if adminKey != "" {
+		keymw := securitymw.AdminKeyMiddleware(adminKey)
 
 		if s.IsMaster() {
 			s.GetF("/install", func(w http.ResponseWriter, r *http.Request) {
@@ -433,21 +566,20 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server
 			s.ClearCaches()
 		}, keymw)
 	}
-
-	return s, nil
 }
 
-func getConfig(conf *config.Store, namespace string, logger log.Logger) Config {
+func getConfig(conf *config.Store, namespace string, logger log.Logger) (Config, error) {
 	serverConfigInterface, err := conf.Get(namespace).Get("config")
 	if err != nil {
 		logger.Log("configuration load", err)
-		os.Exit(1)
+		return Config{}, err
 	}
 	if serverConfigInterface == nil {
-		logger.Log("configuration load", "server config not found")
-		os.Exit(1)
+		err := errors.New("server config not found")
+		logger.Log("configuration load", err.Error())
+		return Config{}, err
 	}
-	return serverConfigInterface.(Config)
+	return serverConfigInterface.(Config), nil
 }
 
 func parseSupportedLanguages(supported string) []language.Tag {

@@ -27,6 +27,7 @@ import (
 
 	"github.com/alien-bunny/ab"
 	"github.com/alien-bunny/ab/lib/abtest"
+	"github.com/alien-bunny/ab/lib/collectionloader"
 	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/db"
 	"github.com/alien-bunny/ab/lib/server"
@@ -38,6 +39,9 @@ import (
 
 func TestAB(t *testing.T) {
 	RegisterFailHandler(Fail)
+	ab.RegisterSiteProvider("fixtures", func(conf map[string]string, readOnly bool) config.CollectionLoader {
+		return collectionloader.NewDirectory("fixtures/sites", conf, readOnly)
+	})
 	RunSpecs(t, "AB Suite")
 }
 

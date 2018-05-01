@@ -45,8 +45,8 @@ var _ = Describe("Decoder", func() {
 		Entry("simple json", []byte(`{"A": 5, "B": "asdf"}`), "application/json", &testData{A: 5, B: "asdf"}),
 		Entry("simple xml", []byte(`<testData><A>5</A><B>asdf</B></testData>`), "application/xml", &testData{A: 5, B: "asdf"}),
 		Entry("simple csv", []byte("a,b,c,d\ne,f,g,h"), "text/csv", &[][]string{
-			[]string{"a", "b", "c", "d"},
-			[]string{"e", "f", "g", "h"},
+			{"a", "b", "c", "d"},
+			{"e", "f", "g", "h"},
 		}),
 	)
 

@@ -12,50 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ab
+package certcache
 
 import (
 	"crypto/tls"
-	"path/filepath"
 	"sync"
 
-	"github.com/alien-bunny/ab/lib/config"
-	"github.com/alien-bunny/ab/lib/errors"
 	"github.com/alien-bunny/ab/lib/log"
 )
 
-type certCache struct {
-	conf     *config.Store
-	mtx      sync.RWMutex
-	cache    map[string]*tls.Certificate
-	logger   log.Logger
-	certFile string
-	keyFile  string
+type CertCache struct {
+	mtx    sync.RWMutex
+	cache  map[string]*tls.Certificate
+	logger log.Logger
+	loader func(string) (string, string, error)
 }
 
-func newCertCache(conf *config.Store, logger log.Logger, certFile, keyFile string) *certCache {
-	c := &certCache{
-		conf:     conf,
-		logger:   logger,
-		certFile: certFile,
-		keyFile:  keyFile,
+func New(logger log.Logger, loader func(string) (string, string, error)) *CertCache {
+	c := &CertCache{
+		logger: logger,
+		loader: loader,
 	}
-	c.clear()
+	c.Clear()
 
 	return c
 }
 
-func (c *certCache) clear() {
+func (c *CertCache) Clear() {
 	c.mtx.Lock()
 	c.cache = make(map[string]*tls.Certificate)
 	c.mtx.Unlock()
+	log.Debug(c.logger).Log("cache clear", "certcache")
 }
 
-func (c *certCache) get(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (c *CertCache) Get(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	var cert *tls.Certificate
 	var err error
 
 	if cert = c.getCached(hello); cert != nil {
+		log.Debug(c.logger).Log("certificate found", hello.ServerName, "cache", "true")
 		return cert, nil
 	}
 
@@ -67,11 +62,12 @@ func (c *certCache) get(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	c.mtx.Lock()
 	c.cache[hello.ServerName] = cert
 	c.mtx.Unlock()
+	log.Debug(c.logger).Log("certificate found", hello.ServerName, "cache", "false")
 
 	return cert, nil
 }
 
-func (c *certCache) getCached(hello *tls.ClientHelloInfo) *tls.Certificate {
+func (c *CertCache) getCached(hello *tls.ClientHelloInfo) *tls.Certificate {
 	c.mtx.RLock()
 	cert := c.cache[hello.ServerName]
 	c.mtx.RUnlock()
@@ -79,22 +75,16 @@ func (c *certCache) getCached(hello *tls.ClientHelloInfo) *tls.Certificate {
 	return cert
 }
 
-func (c *certCache) load(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cfg := c.conf.Get(hello.ServerName)
-	if cfg == nil {
-		return nil, errors.New("namespace not found")
-	}
-
-	s, err := cfg.Get("site")
+func (c *CertCache) load(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cert, key, err := c.loader(hello.ServerName)
 	if err != nil {
 		return nil, err
 	}
 
-	dir := s.(Site).Directories.TLSCertDir
-	cert, err := tls.LoadX509KeyPair(filepath.Join(dir, c.certFile), filepath.Join(dir, c.keyFile))
+	kp, err := tls.X509KeyPair([]byte(cert), []byte(key))
 	if err != nil {
 		return nil, err
 	}
 
-	return &cert, nil
+	return &kp, nil
 }

@@ -33,19 +33,19 @@ type item struct {
 
 func (i *item) Links() map[string][]interface{} {
 	return map[string][]interface{}{
-		"rel0": []interface{}{"http://example.com", "http://asdf.example.com"},
-		"rel1": []interface{}{"http://xzcv.example.com"},
+		"rel0": {"http://example.com", "http://asdf.example.com"},
+		"rel1": {"http://xzcv.example.com"},
 	}
 }
 
 func (i *item) Curies() []hal.HALCurie {
 	return []hal.HALCurie{
-		hal.HALCurie{
+		{
 			Name:      "qwerty",
 			Href:      "http://qwerty.example.com",
 			Templated: false,
 		},
-		hal.HALCurie{
+		{
 			Name:      "asdf",
 			Href:      "http://asdf.example.com/{rel}",
 			Templated: true,
@@ -90,12 +90,12 @@ var _ = Describe("Hal", func() {
 			PageSize: 4,
 			BasePath: "/api/foo",
 			Curies: []hal.HALCurie{
-				hal.HALCurie{Name: "foo", Href: "http://foo.example.com"},
-				hal.HALCurie{Name: "bar", Href: "http://bar.example.com"},
-				hal.HALCurie{Name: "baz", Href: "http://baz.example.com"},
+				{Name: "foo", Href: "http://foo.example.com"},
+				{Name: "bar", Href: "http://bar.example.com"},
+				{Name: "baz", Href: "http://baz.example.com"},
 			},
 			Rels: map[string][]interface{}{
-				"rel test": []interface{}{"http://test.example.com"},
+				"rel test": {"http://test.example.com"},
 			},
 		}
 

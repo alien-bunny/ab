@@ -24,7 +24,7 @@ import (
 
 func CreateGenSecretCMD(logger log.Logger) *cobra.Command {
 	gscmd := &cobra.Command{
-		Use:   "gensecret",
+		Use:   "generate-secret",
 		Short: "generates a secret value",
 	}
 

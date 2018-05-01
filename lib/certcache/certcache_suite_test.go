@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cryptmw_test
+package certcache_test
 
 import (
 	"testing"
@@ -21,7 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestCryptmw(t *testing.T) {
+func TestCertcache(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Cryptmw Suite")
+	RunSpecs(t, "Certcache Suite")
 }

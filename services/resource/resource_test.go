@@ -95,7 +95,7 @@ var _ = Describe("Resource List", func() {
 			{Name: "test", Href: "http://example.com", Templated: false},
 		},
 		Rels: map[string][]interface{}{
-			"asdf": []interface{}{"foo", "bar", "baz"},
+			"asdf": {"foo", "bar", "baz"},
 		},
 	}
 

@@ -20,9 +20,12 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -31,12 +34,14 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/big"
 	mrand "math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/alien-bunny/ab/lib/uuid"
 	"golang.org/x/crypto/ssh"
@@ -297,4 +302,72 @@ func (w ResponseWriterWrapper) Push(target string, opts *http.PushOptions) error
 	}
 
 	return http.ErrNotSupported
+}
+
+// GenerateCertificate generates a cerificate for a host.
+//
+// The first return value is the ceritificate, the second is the key. Both are PEM encoded.
+func GenerateCertificate(host, organization string) (string, string) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	notBefore := time.Now()
+	notAfter := notBefore.Add(time.Hour * 24 * 365 * 10)
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		panic(err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{organization},
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{host},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(priv), priv)
+	if err != nil {
+		panic(err)
+	}
+
+	certOut := bytes.NewBuffer(nil)
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+
+	keyOut := bytes.NewBuffer(nil)
+	pem.Encode(keyOut, pemBlockForKey(priv))
+
+	return string(certOut.Bytes()), string(keyOut.Bytes())
+}
+
+func publicKey(priv interface{}) interface{} {
+	switch k := priv.(type) {
+	case *rsa.PrivateKey:
+		return &k.PublicKey
+	case *ecdsa.PrivateKey:
+		return &k.PublicKey
+	default:
+		return nil
+	}
+
+}
+
+func pemBlockForKey(priv interface{}) *pem.Block {
+	switch k := priv.(type) {
+	case *rsa.PrivateKey:
+		return &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}
+	case *ecdsa.PrivateKey:
+		b, err := x509.MarshalECPrivateKey(k)
+		if err != nil {
+			panic(err)
+		}
+		return &pem.Block{Type: "EC PRIVATE KEY", Bytes: b}
+	}
+
+	return nil
 }

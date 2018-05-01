@@ -26,7 +26,7 @@ import (
 	kitlog "github.com/go-kit/kit/log"
 )
 
-const MIDDLEWARE_DEPENDENCY_REQUESTLOGGER = "*requestmw.RequestLoggerMiddleware"
+const MiddlewareDependencyRequestlogger = "*requestmw.RequestLoggerMiddleware"
 
 var _ middleware.Middleware = &RequestLoggerMiddleware{}
 
@@ -143,31 +143,8 @@ func (rl *RequestLoggerMiddleware) Wrap(next http.Handler) http.Handler {
 
 		end = time.Now().UnixNano()
 		duration := end - start
-		durationTime := ""
-		if duration >= 1000000000 {
-			durationTime = fmt.Sprintf("%.2fs", float64(duration)/1000000000)
-		} else if duration >= 1000000 {
-			durationTime = fmt.Sprintf("%.2fms", float64(duration)/1000000)
-		} else if duration >= 1000 {
-			durationTime = fmt.Sprintf("%.2fµs", float64(duration)/1000)
-		} else {
-			durationTime = fmt.Sprintf("%dns", duration)
-		}
-
-		httpCode := rw.GetCode()
-		codeStr := fmt.Sprintf("%d", httpCode)
-		var code interface{}
-		if httpCode >= 100 && httpCode <= 199 {
-			code = http1xx(codeStr)
-		} else if httpCode >= 200 && httpCode <= 299 {
-			code = http2xx(codeStr)
-		} else if httpCode >= 300 && httpCode <= 399 {
-			code = http3xx(codeStr)
-		} else if httpCode >= 400 && httpCode <= 499 {
-			code = http4xx(codeStr)
-		} else if httpCode >= 500 && httpCode <= 599 {
-			code = http5xx(codeStr)
-		}
+		durationTime := durationTime(duration)
+		code := httpCode(rw.GetCode())
 
 		l.Log(
 			"httpmethod", method(r.Method),
@@ -177,6 +154,35 @@ func (rl *RequestLoggerMiddleware) Wrap(next http.Handler) http.Handler {
 			"duration", reqtime(durationTime),
 		)
 	})
+}
+
+func durationTime(duration int64) string {
+	if duration >= 1000000000 {
+		return fmt.Sprintf("%.2fs", float64(duration)/1000000000)
+	} else if duration >= 1000000 {
+		return fmt.Sprintf("%.2fms", float64(duration)/1000000)
+	} else if duration >= 1000 {
+		return fmt.Sprintf("%.2fµs", float64(duration)/1000)
+	}
+
+	return fmt.Sprintf("%dns", duration)
+}
+
+func httpCode(httpCode int) interface{} {
+	codeStr := fmt.Sprintf("%d", httpCode)
+	if httpCode >= 100 && httpCode <= 199 {
+		return http1xx(codeStr)
+	} else if httpCode >= 200 && httpCode <= 299 {
+		return http2xx(codeStr)
+	} else if httpCode >= 300 && httpCode <= 399 {
+		return http3xx(codeStr)
+	} else if httpCode >= 400 && httpCode <= 499 {
+		return http4xx(codeStr)
+	} else if httpCode >= 500 && httpCode <= 599 {
+		return http5xx(codeStr)
+	}
+
+	return codeStr
 }
 
 var _ http.Hijacker = &requestLoggerResponseWriter{}

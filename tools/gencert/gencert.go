@@ -12,16 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cryptmw_test
+package gencert
 
 import (
-	"testing"
+	"fmt"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/alien-bunny/ab/lib/log"
+	"github.com/alien-bunny/ab/lib/util"
+	"github.com/spf13/cobra"
 )
 
-func TestCryptmw(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Cryptmw Suite")
+func CreateGencertCMD(logger log.Logger) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "generate-cert",
+		Short: "Generates a simple cerficiate",
+		Args:  cobra.ExactArgs(2),
+	}
+
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		host, org := args[0], args[1]
+		cert, key := util.GenerateCertificate(host, org)
+
+		fmt.Printf("%s\n\n%s\n", cert, key)
+
+		return nil
+	}
+
+	return cmd
 }

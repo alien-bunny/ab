@@ -1,0 +1,31 @@
+{
+  "AdminKey": "00000000000000000000000000000000",
+  "Root": true,
+  "Gzip": true,
+  "CryptSecret": "00000000000000000000000000000000",
+  "Config": {
+    "Provider": "fixtures",
+    "ReadOnly": true
+  },
+  "DB": {
+    "MaxIdleConn": 1,
+    "MaxOpenConn": 1,
+    "ConnectionMaxLifetime": 120
+  },
+  "Cookie": {
+    "Prefix": "AB_TEST"
+  },
+  "Directories": {
+    "Assets": "./fixtures/"
+  },
+  "Log": {
+    "Access": true,
+    "DisplayErrors": true
+  },
+  "HTTPS": {
+    "Site": true
+  },
+  "NamespaceNegotiation": {
+    "SkipPort": true
+  }
+}

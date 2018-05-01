@@ -5,7 +5,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/alien-bunny/ab)](https://goreportcard.com/report/github.com/alien-bunny/ab)
 [![CodeFactor](https://www.codefactor.io/repository/github/alien-bunny/ab/badge)](https://www.codefactor.io/repository/github/alien-bunny/ab)
 
-Web development platform.
+Alien Bunny is a content management framework, written in Go.
 
 ## Getting started
 

@@ -17,6 +17,7 @@ package configmw
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/alien-bunny/ab/lib/config"
@@ -83,9 +84,15 @@ func (c *ConfigMiddleware) Wrap(next http.Handler) http.Handler {
 
 var _ NamespaceNegotiator = &HostNamespaceNegotiator{}
 
-type HostNamespaceNegotiator struct{}
+type HostNamespaceNegotiator struct {
+	SkipPort bool
+}
 
 func (h *HostNamespaceNegotiator) NegotiateNamespace(r *http.Request) (string, error) {
+	if h.SkipPort {
+		return strings.Split(r.Host, ":")[0], nil
+	}
+
 	return r.Host, nil
 }
 

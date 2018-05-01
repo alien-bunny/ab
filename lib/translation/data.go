@@ -17,6 +17,6 @@ package translation
 import "golang.org/x/text/language"
 
 var pluralForms = map[language.Tag]map[int]int{
-	language.English:   map[int]int{1: 1},
-	language.Hungarian: map[int]int{},
+	language.English:   {1: 1},
+	language.Hungarian: {},
 }
