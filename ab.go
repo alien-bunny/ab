@@ -33,6 +33,7 @@ import (
 	"github.com/alien-bunny/ab/lib/collectionloader"
 	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/errors"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/log"
 	"github.com/alien-bunny/ab/lib/middleware"
 	"github.com/alien-bunny/ab/lib/server"
@@ -40,6 +41,7 @@ import (
 	"github.com/alien-bunny/ab/middlewares/cryptmw"
 	"github.com/alien-bunny/ab/middlewares/dbmw"
 	"github.com/alien-bunny/ab/middlewares/errormw"
+	"github.com/alien-bunny/ab/middlewares/eventmw"
 	"github.com/alien-bunny/ab/middlewares/logmw"
 	"github.com/alien-bunny/ab/middlewares/rendermw"
 	"github.com/alien-bunny/ab/middlewares/requestmw"
@@ -53,6 +55,9 @@ import (
 const (
 	// VERSION is the version of the framework.
 	VERSION = "dev"
+
+	EventCacheClear = "cache-clear"
+	EventInstall    = "install"
 )
 
 func init() {
@@ -85,7 +90,7 @@ func GetSiteProvider(name string) SiteProvider {
 // The returned channel with either return an error very soon, or it will wait until SIGKILL/SIGTERM is received. The
 // channel is not read-only, so it can be closed. Sending something to the channel, or closing it will stop the server.
 // The idiomatic way to stop the server is to close the channel.
-func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.Logger, basedir string) chan error {
+func Hop(configure func(conf *config.Store, dispatcher *event.Dispatcher, s *server.Server) error, logger log.Logger, basedir string) chan error {
 	ret := make(chan error)
 
 	if basedir == "" {
@@ -97,15 +102,16 @@ func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.
 			logger = log.NewDevLogger(os.Stdout)
 		}
 		conf := setupConfig(logger, basedir)
+		dispatcher := event.NewDispatcher()
 
-		s, err := Pet(conf, config.Default, logger)
+		s, err := Pet(conf, config.Default, logger, dispatcher)
 		if err != nil {
 			logger.Log("pet", err)
 			ret <- err
 			return
 		}
 
-		if err := configure(conf, s); err != nil {
+		if err := configure(conf, dispatcher, s); err != nil {
 			logger.Log("server configuration", err)
 			ret <- err
 			return
@@ -126,7 +132,7 @@ func Hop(configure func(conf *config.Store, s *server.Server) error, logger log.
 			return
 		}
 
-		setupHTTPS(conf, logger, serverConfig, s)
+		setupHTTPS(conf, logger, serverConfig, s, dispatcher)
 
 		stopch := make(chan os.Signal)
 		signal.Notify(stopch, os.Interrupt, syscall.SIGKILL, syscall.SIGTERM)
@@ -193,7 +199,7 @@ func setupSites(conf *config.Store, serverConfig Config) error {
 	return nil
 }
 
-func setupHTTPS(conf *config.Store, logger log.Logger, serverConfig Config, s *server.Server) {
+func setupHTTPS(conf *config.Store, logger log.Logger, serverConfig Config, s *server.Server, dispatcher *event.Dispatcher) {
 	if serverConfig.HTTPS.LetsEncrypt {
 		s.EnableLetsEncrypt("", hostPolicy(conf, logger))
 	} else if serverConfig.HTTPS.Autocert != "" {
@@ -214,7 +220,7 @@ func setupHTTPS(conf *config.Store, logger log.Logger, serverConfig Config, s *s
 			return siteConfig.TLS.Certificate, siteConfig.TLS.Key, nil
 		})
 		s.TLSConfig.GetCertificate = cc.Get
-		s.SubscribeCacheClear(cc.Clear)
+		dispatcher.Subscribe(EventCacheClear, event.Action(cc.Clear))
 	}
 
 	if s.TLSConfig != nil {
@@ -303,7 +309,7 @@ type Site struct {
 	}
 }
 
-func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server.Server, error) {
+func Pet(conf *config.Store, serverNamespace string, logger log.Logger, dispatcher *event.Dispatcher) (*server.Server, error) {
 	conf.RegisterSchema("config", reflect.TypeOf(Config{}))
 	conf.RegisterSchema("site", reflect.TypeOf(Site{}))
 
@@ -316,7 +322,7 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server
 	s.Router.NotFound = simpleErrorPage(http.StatusNotFound)
 	s.Router.MethodNotAllowed = simpleErrorPage(http.StatusMethodNotAllowed)
 
-	s.SubscribeCacheClear(conf.ClearAllCaches)
+	dispatcher.Subscribe(EventCacheClear, event.Action(conf.ClearAllCaches))
 
 	if !serverConfig.DisableMaster {
 		s.SetMaster()
@@ -334,6 +340,7 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger) (*server
 		setupRequestIDMiddleware,
 		setupAccessLogMiddleware(s),
 		setupGzipMiddleware,
+		setupEventMiddleware(dispatcher),
 		setupConfigMiddleware(conf),
 		setupLogMiddleware(s),
 		setupHSTSMiddleware,
@@ -422,6 +429,12 @@ func setupGzipMiddleware(serverConfig Config) (middleware.Middleware, error) {
 	}
 
 	return nil, nil
+}
+
+func setupEventMiddleware(dispatcher *event.Dispatcher) func(serverConfig Config) (middleware.Middleware, error) {
+	return func(serverConfig Config) (middleware.Middleware, error) {
+		return eventmw.New(dispatcher), nil
+	}
 }
 
 func setupConfigMiddleware(conf *config.Store) func(serverConfig Config) (middleware.Middleware, error) {
@@ -559,11 +572,12 @@ func maybeSetupAdmin(s *server.Server, adminKey string) {
 			s.GetF("/install", func(w http.ResponseWriter, r *http.Request) {
 				conn := dbmw.GetConnection(r)
 				s.InstallServices(conn)
+				eventmw.GetDispatcher(r).Dispatch(NewInstallEvent(r))
 			}, keymw)
 		}
 
 		s.GetF("/cache-clear", func(w http.ResponseWriter, r *http.Request) {
-			s.ClearCaches()
+			eventmw.GetDispatcher(r).Dispatch(&CacheClearEvent{})
 		}, keymw)
 	}
 }
@@ -598,6 +612,8 @@ func parseSupportedLanguages(supported string) []language.Tag {
 }
 
 var defaultDeps = []string{
+	configmw.MiddlewareDependencyConfig,
+	eventmw.MiddlewareDependencyEvent,
 	cryptmw.MiddlewareDependencyCrypt,
 	requestmw.MiddlewareDependencyRequestID,
 	logmw.MiddlewareDependencyLog,

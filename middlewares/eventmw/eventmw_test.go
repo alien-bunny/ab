@@ -12,44 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package abtest_test
+package eventmw_test
 
 import (
 	"net/http"
-	"testing"
 
 	"github.com/alien-bunny/ab/lib/abtest"
-	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/event"
-	"github.com/alien-bunny/ab/lib/server"
-	"github.com/alien-bunny/ab/middlewares/rendermw"
+	"github.com/alien-bunny/ab/lib/middleware"
+	"github.com/alien-bunny/ab/middlewares/eventmw"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
-type testdata struct {
-	A int
-	B string
-}
+var _ = Describe("Event Middleware", func() {
+	dispatcher := event.NewDispatcher()
 
-var posttest = testdata{
-	A: 5,
-	B: "asdf",
-}
+	It("should return the dispatcher", func() {
+		stack := middleware.NewStack(nil)
+		mw := eventmw.New(dispatcher)
+		stack.Push(mw)
 
-var configServer = func(conf *config.Store, s *server.Server, dispatcher *event.Dispatcher, base, schema string) (abtest.DataMockerFunc, error) {
-	s.PostF("/api/posttest", func(w http.ResponseWriter, r *http.Request) {
-		rendermw.Render(r).JSON(posttest)
+		abtest.TestMiddleware(stack, func(w http.ResponseWriter, r *http.Request) {
+			d := eventmw.GetDispatcher(r)
+			Expect(d).To(BeIdenticalTo(dispatcher))
+		})
 	})
-
-	return nil, nil
-}
-
-var _, clientFactory = abtest.Hop(configServer)
-
-var _, mockClientFactory = abtest.HopMock(configServer)
-
-func TestTesting(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Testing Suite")
-}
+})

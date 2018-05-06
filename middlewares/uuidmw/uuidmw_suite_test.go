@@ -21,6 +21,7 @@ import (
 
 	"github.com/alien-bunny/ab/lib/abtest"
 	"github.com/alien-bunny/ab/lib/config"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/middlewares/rendermw"
 	"github.com/alien-bunny/ab/middlewares/uuidmw"
@@ -30,7 +31,7 @@ import (
 
 var key = genKey()
 
-var base, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server, base, schema string) (abtest.DataMockerFunc, error) {
+var base, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server, dispatcher *event.Dispatcher, base, schema string) (abtest.DataMockerFunc, error) {
 	s.GetF("/test/:uuid", func(w http.ResponseWriter, r *http.Request) {
 		rendermw.Render(r).Text(server.GetParams(r).ByName("uuid"))
 	}, uuidmw.New(key, false, "uuid"))

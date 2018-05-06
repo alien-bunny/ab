@@ -24,7 +24,9 @@ import (
 
 	"github.com/alien-bunny/ab/lib/hal"
 	"github.com/alien-bunny/ab/lib/render"
+	"github.com/alien-bunny/ab/lib/util"
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 )
 
@@ -55,7 +57,7 @@ func create() (*render.Renderer, *httptest.ResponseRecorder, *http.Request) {
 }
 
 func wrapjson(j string) string {
-	return render.JSON_PREFIX + j + "\n"
+	return render.JSONSecurityPrefix + j + "\n"
 }
 
 type byteReaderCloser struct {
@@ -276,4 +278,36 @@ var _ = Describe("Render", func() {
 		})
 	})
 
+	Describe("a value that needs sanitization cannot be printed", func() {
+		tpl := template.Must(template.New("test").Parse(`<html><head><title>title</title></head><body><p>{{.Secret}}</p></body></html>`))
+		DescribeTable("",
+			func(format func(*render.Renderer, interface{})) {
+				r, rr, req := create()
+				secret := util.RandomString(8)
+				s := &secretive{
+					Secret: secret,
+				}
+				format(r, s)
+				r.Render(rr, req)
+
+				Expect(rr.Code).To(Equal(http.StatusOK))
+				Expect(string(rr.Body.Bytes())).NotTo(ContainSubstring(secret))
+			},
+			Entry("HALJSON", func(r *render.Renderer, v interface{}) { r.HALJSON(v) }),
+			Entry("JSON", func(r *render.Renderer, v interface{}) { r.JSON(v) }),
+			Entry("HTML", func(r *render.Renderer, v interface{}) { r.HTML(tpl, v) }),
+			Entry("XML", func(r *render.Renderer, v interface{}) { r.XML(v, true) }),
+			Entry("YAML", func(r *render.Renderer, v interface{}) { r.YAML(v) }),
+			Entry("TOML", func(r *render.Renderer, v interface{}) { r.TOML(v) }),
+		)
+	})
+
 })
+
+type secretive struct {
+	Secret string
+}
+
+func (s *secretive) Sanitize() {
+	s.Secret = ""
+}

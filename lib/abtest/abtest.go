@@ -29,6 +29,7 @@ import (
 	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/db"
 	"github.com/alien-bunny/ab/lib/errors"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/log"
 	"github.com/alien-bunny/ab/lib/middleware"
 	"github.com/alien-bunny/ab/lib/server"
@@ -63,7 +64,7 @@ func init() {
 
 type DataMockerFunc func(db.DB) error
 
-type SetupFunc func(conf *config.Store, s *server.Server, base, schema string) (DataMockerFunc, error)
+type SetupFunc func(conf *config.Store, s *server.Server, dispatcher *event.Dispatcher, base, schema string) (DataMockerFunc, error)
 
 type SchemaInfo interface {
 	SetSearchPath(db.DB)

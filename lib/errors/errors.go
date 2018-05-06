@@ -16,13 +16,14 @@ package errors
 
 import (
 	"errors"
+	"strings"
 )
 
 // Error extends the built-in error interface with a message that is displayed to the end user.
 type Error interface {
 	// Error that is displayed in the logs and debug messages. Should contain diagnostical information.
 	Error() string
-	// Error that is displayed to the end user.
+	// UserError is an error that is displayed to the end user.
 	UserError(t func(string, map[string]string) string) string
 }
 
@@ -74,7 +75,7 @@ func New(message string) error {
 
 var _ Error = Panic{}
 
-// Calls HandleError on the Error object inside the request context.
+// Fail calls HandleError on the Error object inside the request context.
 func Fail(code int, err error) {
 	panic(Panic{
 		Code: code,
@@ -104,4 +105,27 @@ func (p Panic) UserError(t func(string, map[string]string) string) string {
 	}
 
 	return ""
+}
+
+type multiError struct {
+	errs []error
+}
+
+func (e *multiError) Error() string {
+	strs := make([]string, len(e.errs))
+	for i, err := range e.errs {
+		strs[i] = err.Error()
+	}
+
+	return strings.Join(strs, "\n")
+}
+
+func NewMultiError(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+
+	return &multiError{
+		errs: errs,
+	}
 }

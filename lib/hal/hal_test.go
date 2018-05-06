@@ -79,7 +79,7 @@ var _ = Describe("Hal", func() {
 	})
 
 	Describe("A list of HAL and non-HAL resources in a ResourceList", func() {
-		l := resource.ResourceList{
+		l := &resource.ResourceList{
 			Items: []resource.Resource{
 				&item{A: 5, B: "asdf", C: 8},
 				&item{A: 2, B: "zxcvbn"},

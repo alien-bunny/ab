@@ -15,7 +15,11 @@
 package securitymw_test
 
 import (
+	"bytes"
+	"crypto/rand"
 	"crypto/tls"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -145,3 +149,53 @@ func testRestrictAddress(stack *middleware.Stack, ip string) int {
 
 	return w.Code
 }
+
+var _ = Describe("LengthLimitMiddleware", func() {
+	stack := middleware.NewStack(nil)
+	stack.Push(middleware.Func(securitymw.LengthLimitMiddleware(2048)))
+
+	It("should accept a small request", func() {
+		w := httptest.NewRecorder()
+		buf := bytes.NewBuffer(nil)
+		io.CopyN(buf, rand.Reader, 1024)
+		r, err := abtest.NewRequest("GET", "/", buf)
+		r.Header.Set("Content-Length", "1024")
+		Expect(err).NotTo(HaveOccurred())
+
+		stack.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := ioutil.ReadAll(r.Body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(body).To(HaveLen(1024))
+		})).ServeHTTP(w, r)
+	})
+
+	It("should reject a big request", func() {
+		w := httptest.NewRecorder()
+		buf := bytes.NewBuffer(nil)
+		io.CopyN(buf, rand.Reader, 4096)
+		r, err := abtest.NewRequest("GET", "/", buf)
+		r.Header.Set("Content-Length", "4096")
+		Expect(err).NotTo(HaveOccurred())
+
+		stack.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		})).ServeHTTP(w, r)
+
+		res := w.Result()
+
+		Expect(res.StatusCode).To(Equal(http.StatusExpectationFailed))
+	})
+
+	It("should truncate a too big request when headers are not present", func() {
+		w := httptest.NewRecorder()
+		buf := bytes.NewBuffer(nil)
+		io.CopyN(buf, rand.Reader, 4096)
+		r, err := abtest.NewRequest("GET", "/", buf)
+		Expect(err).NotTo(HaveOccurred())
+
+		stack.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := ioutil.ReadAll(r.Body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(body).To(HaveLen(2048))
+		})).ServeHTTP(w, r)
+	})
+})

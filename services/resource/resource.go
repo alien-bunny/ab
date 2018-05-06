@@ -23,6 +23,7 @@ import (
 	"github.com/alien-bunny/ab/lib"
 	"github.com/alien-bunny/ab/lib/db"
 	"github.com/alien-bunny/ab/lib/errors"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/hal"
 	"github.com/alien-bunny/ab/lib/middleware"
 	"github.com/alien-bunny/ab/lib/render"
@@ -47,12 +48,20 @@ type ResourceList struct {
 	Rels     map[string][]interface{} `json:"-"`
 }
 
+func (rl *ResourceList) Sanitize() {
+	for _, item := range rl.Items {
+		if sanitizer, ok := item.(lib.Sanitizer); ok {
+			sanitizer.Sanitize()
+		}
+	}
+}
+
 type resourceListHALJSON struct {
 	Items []interface{}          `json:"items"`
 	Links map[string]interface{} `json:"_links"`
 }
 
-func (rl ResourceList) MarshalJSON() ([]byte, error) {
+func (rl *ResourceList) MarshalJSON() ([]byte, error) {
 	items := make([]interface{}, len(rl.Items))
 	for i, item := range rl.Items {
 		if el, ok := item.(hal.EndpointLinker); ok {
@@ -68,7 +77,7 @@ func (rl ResourceList) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (rl ResourceList) links() map[string][]interface{} {
+func (rl *ResourceList) links() map[string][]interface{} {
 	if rl.Page > 1 {
 		rl.Rels["page previous"] = append(rl.Rels["page previous"], fmt.Sprintf("%s?page=%d", rl.BasePath, rl.Page-1))
 	}
@@ -120,7 +129,7 @@ type ResourcePathOverrider interface {
 // ResourceFormatter formats resources for the HTTP response.
 type ResourceFormatter interface {
 	FormatSingle(Resource, *render.Renderer)
-	FormatMulti(ResourceList, *render.Renderer)
+	FormatMulti(*ResourceList, *render.Renderer)
 }
 
 // ResourceControllerDelegate customizes a ResourceController.
@@ -142,6 +151,7 @@ var _ server.Service = &ResourceController{}
 // ResourceController represents a CRUD service.
 type ResourceController struct {
 	ResourceFormatter
+	dispatcher     *event.Dispatcher
 	delegate       ResourceControllerDelegate
 	errorConverter func(err *pq.Error) errors.Error
 
@@ -160,25 +170,20 @@ type ResourceController struct {
 	deleteDelegate    ResourceDeleteDelegate
 	deleteMiddlewares []middleware.Middleware
 
-	listEvents   resourceListEvents
-	postEvents   resourceEvents
-	getEvents    resourceEvents
-	putEvents    resourceEvents
-	deleteEvents resourceEvents
-
 	ExtraEndpoints func(s *server.Server) error
 }
 
 // NewResourceController creates a ResourceController with a given delegate and sensible defaults.
-func NewResourceController(delegate ResourceControllerDelegate) *ResourceController {
+func NewResourceController(dispatcher *event.Dispatcher, delegate ResourceControllerDelegate) *ResourceController {
 	return &ResourceController{
 		ResourceFormatter: &DefaultResourceFormatter{},
+		dispatcher:        dispatcher,
 		delegate:          delegate,
 		postMiddlewares:   []middleware.Middleware{dbmw.Begin()},
 		putMiddlewares:    []middleware.Middleware{dbmw.Begin()},
 		deleteMiddlewares: []middleware.Middleware{dbmw.Begin()},
-		errorConverter: func(perr *pq.Error) errors.Error {
-			return errors.NewError(perr.Message, perr.Detail, nil)
+		errorConverter: func(err *pq.Error) errors.Error {
+			return errors.NewError(err.Message, err.Detail, nil)
 		},
 	}
 }
@@ -186,36 +191,6 @@ func NewResourceController(delegate ResourceControllerDelegate) *ResourceControl
 // GetName returns the name of this ResourceController.
 func (res *ResourceController) GetName() string {
 	return res.delegate.GetName()
-}
-
-// AddListEvent adds event handlers for the list event.
-func (res *ResourceController) AddListEvent(evt ...ResourceListEvent) *ResourceController {
-	res.listEvents = append(res.listEvents, evt...)
-	return res
-}
-
-// AddPostEvent adds event handlers for the post event.
-func (res *ResourceController) AddPostEvent(evt ...ResourceEvent) *ResourceController {
-	res.postEvents = append(res.postEvents, evt...)
-	return res
-}
-
-// AddGetEvent adds event handlers for the get event.
-func (res *ResourceController) AddGetEvent(evt ...ResourceEvent) *ResourceController {
-	res.getEvents = append(res.getEvents, evt...)
-	return res
-}
-
-// AddPutEvent adds event handlers for the put event.
-func (res *ResourceController) AddPutEvent(evt ...ResourceEvent) *ResourceController {
-	res.putEvents = append(res.putEvents, evt...)
-	return res
-}
-
-// AddDeleteEvent adds event handlers for the delete event.
-func (res *ResourceController) AddDeleteEvent(evt ...ResourceEvent) *ResourceController {
-	res.deleteEvents = append(res.deleteEvents, evt...)
-	return res
 }
 
 // List enables the listing endpoint.
@@ -266,18 +241,20 @@ func (res *ResourceController) listHandler(w http.ResponseWriter, r *http.Reques
 	limit := res.listDelegate.PageLength()
 	start := ab.Pager(r, limit)
 
-	res.listEvents.invokeBefore(r)
+	errs := res.dispatcher.Dispatch(NewBeforeResourceListEvent(r))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	list, err := res.listDelegate.List(r, start, limit)
 	ab.MaybeFail(http.StatusInternalServerError, res.convertError(err))
-	reslist := ResourceList{
+	reslist := &ResourceList{
 		Items:    list,
 		PageSize: limit,
 		Page:     start / limit,
 		BasePath: "/api/" + res.delegate.GetName(),
 	}
 
-	res.listEvents.invokeAfter(r, &reslist)
+	errs = res.dispatcher.Dispatch(NewAfterResourceListEvent(r, reslist))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	res.ResourceFormatter.FormatMulti(reslist, ab.Render(r))
 }
@@ -286,7 +263,8 @@ func (res *ResourceController) postHandler(w http.ResponseWriter, r *http.Reques
 	d := res.postDelegate.Empty()
 	ab.MustDecode(r, d)
 
-	res.postEvents.invokeBefore(r, d)
+	errs := res.dispatcher.Dispatch(NewResourceCRUDEvent(EventBeforeResourcePost, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	res.postDelegate.Validate(d, r)
 
@@ -295,12 +273,14 @@ func (res *ResourceController) postHandler(w http.ResponseWriter, r *http.Reques
 		ab.MaybeFail(http.StatusBadRequest, err)
 	}
 
-	res.postEvents.invokeInside(r, d)
+	errs = res.dispatcher.Dispatch(NewResourceCRUDEvent(EventDuringResourcePost, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	err := res.postDelegate.Insert(d, r)
 	ab.MaybeFail(http.StatusInternalServerError, res.convertError(err))
 
-	res.postEvents.invokeAfter(r, d)
+	errs = res.dispatcher.Dispatch(NewResourceCRUDEvent(EventAfterResourcePost, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	res.ResourceFormatter.FormatSingle(d, ab.Render(r).SetCode(http.StatusCreated))
 }
@@ -308,7 +288,8 @@ func (res *ResourceController) postHandler(w http.ResponseWriter, r *http.Reques
 func (res *ResourceController) getHandler(w http.ResponseWriter, r *http.Request) {
 	id := server.GetParams(r).ByName("id")
 
-	res.getEvents.invokeBefore(r, nil)
+	errs := res.dispatcher.Dispatch(NewResourceCRUDEvent(EventBeforeResourceGet, r, nil))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	d, err := res.getDelegate.Load(id, r)
 	ab.MaybeFail(http.StatusInternalServerError, res.convertError(err))
@@ -316,7 +297,8 @@ func (res *ResourceController) getHandler(w http.ResponseWriter, r *http.Request
 		ab.Fail(http.StatusNotFound, nil)
 	}
 
-	res.getEvents.invokeAfter(r, d)
+	errs = res.dispatcher.Dispatch(NewResourceCRUDEvent(EventAfterResourceGet, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	res.ResourceFormatter.FormatSingle(d, ab.Render(r))
 }
@@ -327,7 +309,8 @@ func (res *ResourceController) putHandler(w http.ResponseWriter, r *http.Request
 	d := res.putDelegate.Empty()
 	ab.MustDecode(r, d)
 
-	res.putEvents.invokeBefore(r, d)
+	errs := res.dispatcher.Dispatch(NewResourceCRUDEvent(EventBeforeResourcePut, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	if res.putDelegate.GetID(d) != id {
 		ab.Fail(http.StatusBadRequest, nil)
@@ -340,12 +323,14 @@ func (res *ResourceController) putHandler(w http.ResponseWriter, r *http.Request
 		ab.MaybeFail(http.StatusBadRequest, err)
 	}
 
-	res.putEvents.invokeInside(r, d)
+	errs = res.dispatcher.Dispatch(NewResourceCRUDEvent(EventDuringResourcePut, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	err := res.putDelegate.Update(d, r)
 	ab.MaybeFail(http.StatusInternalServerError, res.convertError(err))
 
-	res.putEvents.invokeAfter(r, d)
+	errs = res.dispatcher.Dispatch(NewResourceCRUDEvent(EventAfterResourcePut, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	res.ResourceFormatter.FormatSingle(d, ab.Render(r))
 }
@@ -353,7 +338,8 @@ func (res *ResourceController) putHandler(w http.ResponseWriter, r *http.Request
 func (res *ResourceController) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := server.GetParams(r).ByName("id")
 
-	res.deleteEvents.invokeBefore(r, nil)
+	errs := res.dispatcher.Dispatch(NewResourceCRUDEvent(EventBeforeResourceDelete, r, nil))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	d, err := res.deleteDelegate.Load(id, r)
 	ab.MaybeFail(http.StatusInternalServerError, res.convertError(err))
@@ -361,12 +347,14 @@ func (res *ResourceController) deleteHandler(w http.ResponseWriter, r *http.Requ
 		ab.Fail(http.StatusNotFound, nil)
 	}
 
-	res.deleteEvents.invokeInside(r, d)
+	errs = res.dispatcher.Dispatch(NewResourceCRUDEvent(EventDuringResourceDelete, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
 	err = res.deleteDelegate.Delete(d, r)
 	ab.MaybeFail(http.StatusInternalServerError, res.convertError(err))
 
-	res.deleteEvents.invokeAfter(r, d)
+	errs = res.dispatcher.Dispatch(NewResourceCRUDEvent(EventAfterResourceDelete, r, d))
+	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 }
 
 func (res *ResourceController) Register(srv *server.Server) error {

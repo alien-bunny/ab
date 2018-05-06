@@ -22,14 +22,14 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/alien-bunny/ab/lib"
 	"github.com/alien-bunny/ab/lib/hal"
+	"github.com/golang/gddo/httputil"
 	"github.com/pelletier/go-toml"
 	"gopkg.in/yaml.v2"
-
-	"github.com/golang/gddo/httputil"
 )
 
-const JSON_PREFIX = ")]}',\n"
+const JSONSecurityPrefix = ")]}',\n"
 
 // JSONPrefix is a global switch for the ")]}',\n" JSON response prefix.
 //
@@ -99,7 +99,7 @@ func (r *Renderer) Binary(mediaType, filename string, reader io.Reader) *Rendere
 
 func maybePrefix(w io.Writer) {
 	if JSONPrefix {
-		w.Write([]byte(JSON_PREFIX))
+		w.Write([]byte(JSONSecurityPrefix))
 	}
 }
 
@@ -107,6 +107,7 @@ func maybePrefix(w io.Writer) {
 func (r *Renderer) JSON(v interface{}) *Renderer {
 	return r.AddOffer("application/json", func(w http.ResponseWriter) {
 		maybePrefix(w)
+		maybeSanitize(v)
 		json.NewEncoder(w).Encode(v)
 	})
 }
@@ -115,6 +116,7 @@ func (r *Renderer) JSON(v interface{}) *Renderer {
 func (r *Renderer) HALJSON(v interface{}) *Renderer {
 	return r.AddOffer("application/hal+json", func(w http.ResponseWriter) {
 		maybePrefix(w)
+		maybeSanitize(v)
 		enc := json.NewEncoder(w)
 		if el, ok := v.(hal.EndpointLinker); ok {
 			enc.Encode(hal.NewHalWrapper(el))
@@ -127,6 +129,7 @@ func (r *Renderer) HALJSON(v interface{}) *Renderer {
 // HTML adds an HTML offer to the Renderer struct.
 func (r *Renderer) HTML(t *template.Template, v interface{}) *Renderer {
 	return r.AddOffer("text/html", func(w http.ResponseWriter) {
+		maybeSanitize(v)
 		if terr := t.Execute(w, v); terr != nil {
 			panic(terr)
 		}
@@ -151,6 +154,7 @@ func (r *Renderer) XML(v interface{}, pretty bool) *Renderer {
 	}
 
 	return r.AddOffer(mt, func(w http.ResponseWriter) {
+		maybeSanitize(v)
 		e := xml.NewEncoder(w)
 		if pretty {
 			e.Indent("", "\t")
@@ -162,6 +166,7 @@ func (r *Renderer) XML(v interface{}, pretty bool) *Renderer {
 // YAML adds a YAML offer to the Renderer struct.
 func (r *Renderer) YAML(v interface{}) *Renderer {
 	return r.AddOffer("application/yaml", func(w http.ResponseWriter) {
+		maybeSanitize(v)
 		yaml.NewEncoder(w).Encode(v)
 	})
 }
@@ -169,6 +174,7 @@ func (r *Renderer) YAML(v interface{}) *Renderer {
 // TOML adds a TOML offer to the Renderer struct.
 func (r *Renderer) TOML(v interface{}) *Renderer {
 	return r.AddOffer("application/toml", func(w http.ResponseWriter) {
+		maybeSanitize(v)
 		toml.NewEncoder(w).Encode(v)
 	})
 }
@@ -289,4 +295,10 @@ func (r *Renderer) IsRendered() bool {
 // This means that even if Render() will be called, nothing will happen.
 func (r *Renderer) SetRendered() {
 	r.rendered = true
+}
+
+func maybeSanitize(v interface{}) {
+	if sanitizer, ok := v.(lib.Sanitizer); ok {
+		sanitizer.Sanitize()
+	}
 }

@@ -57,7 +57,6 @@ type Server struct {
 	TLSConfig       *tls.Config
 	HTTPServer      *http.Server
 	services        []Service
-	cacheClearers   []func()
 }
 
 // NewServer creates a new server with a database connection.
@@ -74,16 +73,6 @@ func NewServer(config *config.Store, logger log.Logger) *Server {
 	s.Router.HandleOPTIONS = true
 
 	return s
-}
-
-func (s *Server) SubscribeCacheClear(clearFunc func()) {
-	s.cacheClearers = append(s.cacheClearers, clearFunc)
-}
-
-func (s *Server) ClearCaches() {
-	for _, clearFunc := range s.cacheClearers {
-		clearFunc()
-	}
 }
 
 // IsMaster tells if this server is in master mode.

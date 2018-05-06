@@ -67,3 +67,19 @@ var _ = Describe("Error handler library", func() {
 		})
 	})
 })
+
+var _ = Describe("The MultiError type", func() {
+	It("should return nil when an empty array is given", func() {
+		Expect(errors.NewMultiError([]error{})).To(BeNil())
+	})
+
+	It("should concatenate the errors", func() {
+		errs := []error{
+			errors.New("A"),
+			errors.New("B"),
+			errors.New("C"),
+		}
+
+		Expect(errors.NewMultiError(errs).Error()).To(Equal("A\nB\nC"))
+	})
+})

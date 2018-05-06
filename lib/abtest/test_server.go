@@ -20,6 +20,7 @@ import (
 
 	"github.com/alien-bunny/ab"
 	"github.com/alien-bunny/ab/lib/config"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/lib/util"
 )
@@ -63,7 +64,8 @@ func NewTestServer() *TestServer {
 func (s *TestServer) Setup(setup SetupFunc) (*server.Server, func()) {
 	logger := GetLogger()
 	conf := GetConfig(logger, s.Addr)
-	srv, err := ab.Pet(conf, config.Default, logger)
+	dispatcher := event.NewDispatcher()
+	srv, err := ab.Pet(conf, config.Default, logger, dispatcher)
 	if err != nil {
 		panic(err)
 	}
@@ -73,7 +75,7 @@ func (s *TestServer) Setup(setup SetupFunc) (*server.Server, func()) {
 
 	var mock DataMockerFunc
 	if setup != nil {
-		mock, err = setup(conf, srv, "http://"+s.Addr, smw.GetSchemaName())
+		mock, err = setup(conf, srv, dispatcher, "http://"+s.Addr, smw.GetSchemaName())
 		if err != nil {
 			panic(err)
 		}

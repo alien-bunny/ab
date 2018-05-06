@@ -18,3 +18,8 @@ package lib
 type Validator interface {
 	Validate() error
 }
+
+// Sanitizer removes potentially sensitive data before logging or rendering.
+type Sanitizer interface {
+	Sanitize()
+}

@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/alien-bunny/ab/lib"
 	"github.com/fatih/color"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -152,7 +153,9 @@ func DefaultJSONLogger(options ...level.Option) Logger {
 }
 
 func NewJSONLogger(w io.Writer, options ...level.Option) Logger {
-	return withLevels(log.NewJSONLogger(log.NewSyncWriter(w)), options...)
+	return withLevels(&sanitizerLogger{
+		logger: log.NewJSONLogger(log.NewSyncWriter(w)),
+	}, options...)
 }
 
 func DefaultDevLogger(options ...level.Option) Logger {
@@ -169,20 +172,39 @@ type ValueFormatter interface {
 	Format(w io.Writer)
 }
 
+// sanitizerLogger runs the santize function on all keyvals if they have it.
+type sanitizerLogger struct {
+	logger Logger
+}
+
+func (l *sanitizerLogger) Log(keyvals ...interface{}) error {
+	for _, v := range keyvals {
+		if sanitizer, ok := v.(lib.Sanitizer); ok {
+			sanitizer.Sanitize()
+		}
+	}
+
+	return l.logger.Log(keyvals...)
+}
+
 // fixerLogger converts all compound keyvals into strings.
 type fixerLogger struct {
 	logger Logger
 }
 
-func (v *fixerLogger) Log(keyvals ...interface{}) error {
+func (l *fixerLogger) Log(keyvals ...interface{}) error {
 	for i, v := range keyvals {
 		keyvals[i] = fix(v)
 	}
 
-	return v.logger.Log(keyvals...)
+	return l.logger.Log(keyvals...)
 }
 
 func fix(v interface{}) interface{} {
+	if sanitizer, ok := v.(lib.Sanitizer); ok {
+		sanitizer.Sanitize()
+	}
+
 	switch reflect.TypeOf(v).Kind() {
 	case reflect.Array, reflect.Map, reflect.Slice:
 		return fmt.Sprintf("%#v", v)

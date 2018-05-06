@@ -30,6 +30,7 @@ import (
 	"github.com/alien-bunny/ab/lib/collectionloader"
 	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/db"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/middlewares/dbmw"
 	"github.com/alien-bunny/ab/middlewares/securitymw"
@@ -45,7 +46,7 @@ func TestAB(t *testing.T) {
 	RunSpecs(t, "AB Suite")
 }
 
-var _, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server, base, schema string) (abtest.DataMockerFunc, error) {
+var _, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server, dispatcher *event.Dispatcher, base, schema string) (abtest.DataMockerFunc, error) {
 	s.AddFile("/frontend", "fixtures/index.html")
 
 	s.GetF("/csrf", func(w http.ResponseWriter, r *http.Request) {

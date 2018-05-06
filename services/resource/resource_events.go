@@ -14,98 +14,92 @@
 
 package resource
 
-import "net/http"
+import (
+	"net/http"
 
-// ResourceListEvent is used as an event handler for a listing endpoint.
-type ResourceListEvent interface {
-	Before(*http.Request)
-	After(*http.Request, *ResourceList)
+	"github.com/alien-bunny/ab/lib/event"
+)
+
+const (
+	EventBeforeResourceList   = "before-resource-list"
+	EventAfterResourceList    = "after-resource-list"
+	EventBeforeResourcePost   = "before-resource-post"
+	EventDuringResourcePost   = "during-resource-post"
+	EventAfterResourcePost    = "after-resource-post"
+	EventBeforeResourceGet    = "before-resource-get"
+	EventAfterResourceGet     = "after-resource-get"
+	EventBeforeResourcePut    = "before-resource-put"
+	EventDuringResourcePut    = "during-resource-put"
+	EventAfterResourcePut     = "after-resource-put"
+	EventBeforeResourceDelete = "before-resource-delete"
+	EventDuringResourceDelete = "during-resource-delete"
+	EventAfterResourceDelete  = "after-resource-delete"
+)
+
+type resourceEventBase struct {
+	r *http.Request
 }
 
-type resourceListEvents []ResourceListEvent
+func (e resourceEventBase) ErrorStrategy() event.ErrorStrategy {
+	return event.ErrorStrategyAggregate
+}
 
-func (e resourceListEvents) invokeBefore(r *http.Request) {
-	for _, evt := range e {
-		evt.Before(r)
+func (e resourceEventBase) Request() *http.Request {
+	return e.r
+}
+
+type BeforeResourceListEvent struct {
+	resourceEventBase
+}
+
+func (e *BeforeResourceListEvent) Name() string {
+	return EventBeforeResourceList
+}
+
+func NewBeforeResourceListEvent(r *http.Request) *BeforeResourceListEvent {
+	return &BeforeResourceListEvent{
+		resourceEventBase{r: r},
 	}
 }
 
-func (e resourceListEvents) invokeAfter(r *http.Request, res *ResourceList) {
-	for _, evt := range e {
-		evt.After(r, res)
+type AfterResourceListEvent struct {
+	resourceEventBase
+	list *ResourceList
+}
+
+func (e *AfterResourceListEvent) Name() string {
+	return EventAfterResourceList
+}
+
+func (e *AfterResourceListEvent) List() *ResourceList {
+	return e.list
+}
+
+func NewAfterResourceListEvent(r *http.Request, list *ResourceList) *AfterResourceListEvent {
+	return &AfterResourceListEvent{
+		resourceEventBase: resourceEventBase{r: r},
+		list:              list,
 	}
 }
 
-var _ ResourceListEvent = ResourceListEventCallback{}
-
-// ResourceListEventCallback is a simple implementation of ResourceListEvent that invokes callbacks.
-type ResourceListEventCallback struct {
-	BeforeCallback func(*http.Request)
-	AfterCallback  func(*http.Request, *ResourceList)
+type ResourceCRUDEvent struct {
+	resourceEventBase
+	resource  Resource
+	eventName string
 }
 
-func (c ResourceListEventCallback) Before(r *http.Request) {
-	if c.BeforeCallback != nil {
-		c.BeforeCallback(r)
-	}
+func (e *ResourceCRUDEvent) Name() string {
+	return e.eventName
 }
 
-func (c ResourceListEventCallback) After(r *http.Request, res *ResourceList) {
-	if c.AfterCallback != nil {
-		c.AfterCallback(r, res)
-	}
+func (e *ResourceCRUDEvent) Resource() Resource {
+	return e.resource
 }
 
-// ResourceEvent is used as an event handler for ResourceController endpoints.
-type ResourceEvent interface {
-	Before(*http.Request, Resource)
-	Inside(*http.Request, Resource)
-	After(*http.Request, Resource)
-}
-
-type resourceEvents []ResourceEvent
-
-func (e resourceEvents) invokeBefore(r *http.Request, res Resource) {
-	for _, evt := range e {
-		evt.Before(r, res)
-	}
-}
-
-func (e resourceEvents) invokeInside(r *http.Request, res Resource) {
-	for _, evt := range e {
-		evt.Inside(r, res)
-	}
-}
-
-func (e resourceEvents) invokeAfter(r *http.Request, res Resource) {
-	for _, evt := range e {
-		evt.After(r, res)
-	}
-}
-
-var _ ResourceEvent = ResourceEventCallback{}
-
-// ResourceEventCallback is a simple implementation of ResourceEvent that invokes callbacks.
-type ResourceEventCallback struct {
-	BeforeCallback func(*http.Request, Resource)
-	InsideCallback func(*http.Request, Resource)
-	AfterCallback  func(*http.Request, Resource)
-}
-
-func (c ResourceEventCallback) Before(r *http.Request, res Resource) {
-	if c.BeforeCallback != nil {
-		c.BeforeCallback(r, res)
-	}
-}
-
-func (c ResourceEventCallback) Inside(r *http.Request, res Resource) {
-	if c.InsideCallback != nil {
-		c.InsideCallback(r, res)
-	}
-}
-
-func (c ResourceEventCallback) After(r *http.Request, res Resource) {
-	if c.AfterCallback != nil {
-		c.AfterCallback(r, res)
+func NewResourceCRUDEvent(eventName string, r *http.Request, resource Resource) *ResourceCRUDEvent {
+	return &ResourceCRUDEvent{
+		resourceEventBase: resourceEventBase{r},
+		resource:          resource,
+		eventName:         eventName,
 	}
 }

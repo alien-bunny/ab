@@ -17,12 +17,10 @@ package ab
 import (
 	"net/http"
 
-	kitlog "github.com/go-kit/kit/log"
-	"github.com/julienschmidt/httprouter"
-
 	"github.com/alien-bunny/ab/lib/db"
 	"github.com/alien-bunny/ab/lib/decoder"
 	"github.com/alien-bunny/ab/lib/errors"
+	"github.com/alien-bunny/ab/lib/log"
 	"github.com/alien-bunny/ab/lib/render"
 	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/lib/session"
@@ -31,21 +29,22 @@ import (
 	"github.com/alien-bunny/ab/middlewares/rendermw"
 	"github.com/alien-bunny/ab/middlewares/sessionmw"
 	"github.com/alien-bunny/ab/middlewares/translationmw"
+	"github.com/julienschmidt/httprouter"
 )
 
-func LogDebug(r *http.Request, component, category interface{}) kitlog.Logger {
+func LogDebug(r *http.Request, component, category interface{}) log.Logger {
 	return logmw.Debug(r, component, category)
 }
 
-func LogInfo(r *http.Request, component, category interface{}) kitlog.Logger {
+func LogInfo(r *http.Request, component, category interface{}) log.Logger {
 	return logmw.Info(r, component, category)
 }
 
-func LogWarn(r *http.Request, component, category interface{}) kitlog.Logger {
+func LogWarn(r *http.Request, component, category interface{}) log.Logger {
 	return logmw.Warn(r, component, category)
 }
 
-func LogError(r *http.Request, component, category interface{}) kitlog.Logger {
+func LogError(r *http.Request, component, category interface{}) log.Logger {
 	return logmw.Error(r, component, category)
 }
 

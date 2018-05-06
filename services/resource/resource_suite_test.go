@@ -17,19 +17,19 @@ package resource_test
 import (
 	"database/sql"
 	"net/http"
+	"testing"
 	"time"
 
 	"github.com/alien-bunny/ab"
 	"github.com/alien-bunny/ab/lib/abtest"
 	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/db"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/lib/uuid"
 	"github.com/alien-bunny/ab/services/resource"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
-	"testing"
 )
 
 func TestResource(t *testing.T) {
@@ -37,24 +37,25 @@ func TestResource(t *testing.T) {
 	RunSpecs(t, "Resource Suite")
 }
 
-var _, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server, base, schema string) (abtest.DataMockerFunc, error) {
+var _, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server, dispatcher *event.Dispatcher, base, schema string) (abtest.DataMockerFunc, error) {
 	d := &testResourceControllerDelegate{}
 
-	updatedCallback := resource.ResourceEventCallback{
-		BeforeCallback: func(r *http.Request, data resource.Resource) {
-			tr := data.(*testResource)
-			tr.Updated = time.Now()
-		},
-	}
+	updatedSubscriber := event.SubscriberFunc(func(e event.Event) error {
+		tr := e.(*resource.ResourceCRUDEvent).Resource().(*testResource)
+		tr.Updated = time.Now()
 
-	rc := resource.NewResourceController(d).
+		return nil
+	})
+
+	dispatcher.Subscribe(resource.EventBeforeResourcePost, updatedSubscriber)
+	dispatcher.Subscribe(resource.EventBeforeResourcePut, updatedSubscriber)
+
+	rc := resource.NewResourceController(dispatcher, d).
 		List(d).
 		Post(d).
 		Get(d).
 		Put(d).
-		Delete(d).
-		AddPostEvent(updatedCallback).
-		AddPutEvent(updatedCallback)
+		Delete(d)
 
 	s.RegisterService(rc)
 

@@ -86,7 +86,7 @@ func loadResource(client *abtest.TestClient, resp *http.Response, res *testResou
 
 var _ = Describe("Resource List", func() {
 	const expected = `{"items":["0","1","2","3","4","5","6","7","8","9"],"_links":{"asdf":[{"href":"foo"},{"href":"bar"},{"href":"baz"}],"curies":[{"name":"test","href":"http://example.com","templated":false}],"page next":[{"href":"/resource-list?page=3"}],"page previous":[{"href":"/resource-list?page=1"}]}}`
-	rl := resource.ResourceList{
+	rl := &resource.ResourceList{
 		Items:    []resource.Resource{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"},
 		Page:     2,
 		PageSize: 10,

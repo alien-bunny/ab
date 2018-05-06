@@ -22,6 +22,7 @@ import (
 	"github.com/alien-bunny/ab/lib/util"
 	"github.com/go-kit/kit/log/level"
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 )
 
@@ -72,4 +73,33 @@ var _ = Describe("Logfmt logger encoder", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(buf.Bytes())).To(Equal(serialized))
 	})
+})
+
+type secretiveLog struct {
+	Secret string
+}
+
+func (s *secretiveLog) Sanitize() {
+	s.Secret = ""
+}
+
+var _ = Describe("Secret values with a sanitizer cannot be logged", func() {
+	DescribeTable("Verifying that a logger cannot be created that lets a secret value to be exposed",
+		func(factory func(io.Writer, ...level.Option) log.Logger) {
+			buf := bytes.NewBuffer(nil)
+			logger := factory(buf)
+			secret := util.RandomString(8)
+			v := &secretiveLog{
+				Secret: secret,
+			}
+
+			err := logger.Log("value", v)
+			Expect(err).NotTo(HaveOccurred())
+			logged := string(buf.Bytes())
+			Expect(logged).NotTo(ContainSubstring(secret))
+		},
+		Entry("prod logger", log.NewProdLogger),
+		Entry("json logger", log.NewJSONLogger),
+		Entry("dev logger", log.NewDevLogger),
+	)
 })

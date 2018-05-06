@@ -24,6 +24,7 @@ import (
 
 	"github.com/alien-bunny/ab"
 	"github.com/alien-bunny/ab/lib/config"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/lib/util"
 	. "github.com/onsi/ginkgo"
@@ -33,7 +34,7 @@ import (
 var _ = Describe("Hop should start without error and serve the index page", func() {
 	addr := setHostAndPort()
 	It("should be able to start a server", func() {
-		errch := ab.Hop(func(conf *config.Store, s *server.Server) error {
+		errch := ab.Hop(func(conf *config.Store, dispatcher *event.Dispatcher, s *server.Server) error {
 			return nil
 		}, nil, "./fixtures")
 		select {
