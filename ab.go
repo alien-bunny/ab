@@ -56,8 +56,9 @@ const (
 	// VERSION is the version of the framework.
 	VERSION = "dev"
 
-	EventCacheClear = "cache-clear"
-	EventInstall    = "install"
+	EventCacheClear  = "cache-clear"
+	EventInstall     = "install"
+	EventMaintenance = "maintenance"
 )
 
 func init() {
@@ -572,12 +573,19 @@ func maybeSetupAdmin(s *server.Server, adminKey string) {
 			s.GetF("/install", func(w http.ResponseWriter, r *http.Request) {
 				conn := dbmw.GetConnection(r)
 				s.InstallServices(conn)
-				eventmw.GetDispatcher(r).Dispatch(NewInstallEvent(r))
+				errs := eventmw.GetDispatcher(r).Dispatch(NewInstallEvent(r))
+				MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
+			}, keymw)
+
+			s.GetF("/maintenance", func(w http.ResponseWriter, r *http.Request) {
+				errs := eventmw.GetDispatcher(r).Dispatch(NewMaintenanceEvent(r))
+				MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 			}, keymw)
 		}
 
 		s.GetF("/cache-clear", func(w http.ResponseWriter, r *http.Request) {
-			eventmw.GetDispatcher(r).Dispatch(&CacheClearEvent{})
+			errs := eventmw.GetDispatcher(r).Dispatch(&CacheClearEvent{})
+			MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 		}, keymw)
 	}
 }

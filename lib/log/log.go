@@ -20,7 +20,9 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/alien-bunny/ab/lib"
 	"github.com/fatih/color"
@@ -113,22 +115,22 @@ func (l *abLogger) Log(keyvals ...interface{}) error {
 			f.Format(&enc.buf)
 			enc.buf.Write([]byte(" "))
 		} else {
-			rawKeyvals = append(rawKeyvals, fix(k), fix(v))
+			rawKeyvals = append(rawKeyvals, fix(k, false), fix(v, true))
 		}
 	}
 
 	if len(rawKeyvals) > 0 {
-		if eerr := enc.EncodeKeyvals(rawKeyvals...); eerr != nil {
-			return eerr
+		if err := enc.EncodeKeyvals(rawKeyvals...); err != nil {
+			panic(err)
 		}
 	}
 
-	if eerr := enc.EndRecord(); eerr != nil {
-		return eerr
+	if err := enc.EndRecord(); err != nil {
+		panic(err)
 	}
 
-	if _, werr := l.w.Write(enc.buf.Bytes()); werr != nil {
-		return werr
+	if _, err := l.w.Write(enc.buf.Bytes()); err != nil {
+		panic(err)
 	}
 
 	return nil
@@ -193,16 +195,30 @@ type fixerLogger struct {
 }
 
 func (l *fixerLogger) Log(keyvals ...interface{}) error {
+	var value bool
 	for i, v := range keyvals {
-		keyvals[i] = fix(v)
+		keyvals[i] = fix(v, value)
+		value = !value
 	}
 
 	return l.logger.Log(keyvals...)
 }
 
-func fix(v interface{}) interface{} {
+func fix(v interface{}, value bool) interface{} {
 	if sanitizer, ok := v.(lib.Sanitizer); ok {
 		sanitizer.Sanitize()
+	}
+
+	if !value {
+		if str, ok := v.(string); ok {
+			return strings.Map(func(r rune) rune {
+				if unicode.IsSpace(r) {
+					return '-'
+				}
+
+				return r
+			}, str)
+		}
 	}
 
 	switch reflect.TypeOf(v).Kind() {

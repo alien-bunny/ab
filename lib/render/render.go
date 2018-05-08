@@ -181,7 +181,11 @@ func (r *Renderer) TOML(v interface{}) *Renderer {
 
 // CommonFormats adds HAL+JSON, JSON, XML, YAML and TOML offers to the renderer struct.
 func (r *Renderer) CommonFormats(v interface{}) *Renderer {
-	return r.HALJSON(v).JSON(v).XML(v, true).YAML(v).TOML(v)
+	if l, ok := v.(hal.EndpointLinker); ok {
+		r.HALJSON(l)
+	}
+
+	return r.JSON(v).YAML(v).TOML(v).XML(v, true)
 }
 
 // CSV adds a CSV offer for the Renderer object.

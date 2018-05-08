@@ -15,7 +15,6 @@
 package resource
 
 import (
-	"github.com/alien-bunny/ab/lib/hal"
 	"github.com/alien-bunny/ab/lib/render"
 )
 
@@ -26,15 +25,11 @@ type DefaultResourceFormatter struct {
 }
 
 func (f *DefaultResourceFormatter) FormatSingle(res Resource, r *render.Renderer) {
-	if l, ok := res.(hal.EndpointLinker); ok {
-		r.HALJSON(l)
-	}
-	r.
-		JSON(res)
+	r.CommonFormats(res)
 }
 
 func (f *DefaultResourceFormatter) FormatMulti(res *ResourceList, r *render.Renderer) {
 	r.
 		HALJSON(res).
-		JSON(res.Items)
+		CommonFormats(res.Items)
 }

@@ -46,6 +46,11 @@ func TestAB(t *testing.T) {
 	RunSpecs(t, "AB Suite")
 }
 
+var (
+	cacheCleared   = false
+	maintenanceRan = false
+)
+
 var _, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server, dispatcher *event.Dispatcher, base, schema string) (abtest.DataMockerFunc, error) {
 	s.AddFile("/frontend", "fixtures/index.html")
 
@@ -95,6 +100,14 @@ var _, clientFactory = abtest.HopMock(func(conf *config.Store, s *server.Server,
 		ab.MaybeFail(http.StatusInternalServerError, err)
 		ab.Render(r).Binary("application/octet-stream", "binary.bin", file)
 	})
+
+	dispatcher.Subscribe(ab.EventCacheClear, event.Action(func() {
+		cacheCleared = true
+	}))
+
+	dispatcher.Subscribe(ab.EventMaintenance, event.Action(func() {
+		maintenanceRan = true
+	}))
 
 	svc := &testService{}
 	s.RegisterService(svc)

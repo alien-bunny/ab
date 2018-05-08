@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/alien-bunny/ab/lib/abtest"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -112,6 +113,20 @@ var _ = Describe("Empty endpoint", func() {
 	It("should return http.StatusNoContent", func() {
 		c := clientFactory()
 		c.Request("GET", "/empty", nil, nil, nil, http.StatusNoContent)
+	})
+})
+
+var _ = Describe("Admin tasks", func() {
+	It("should perform maintenance", func() {
+		c := clientFactory()
+		c.Request("GET", "/maintenance?key="+abtest.FakeAdminKey, nil, nil, nil, http.StatusNoContent)
+		Expect(maintenanceRan).To(BeTrue())
+	})
+
+	It("should clear caches", func() {
+		c := clientFactory()
+		c.Request("GET", "/cache-clear?key="+abtest.FakeAdminKey, nil, nil, nil, http.StatusNoContent)
+		Expect(cacheCleared).To(BeTrue())
 	})
 })
 

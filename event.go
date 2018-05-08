@@ -55,7 +55,36 @@ func (e *InstallEvent) Name() string {
 	return EventInstall
 }
 
-// Name of the event. Always returns event.ErrorStrategyStop.
+// ErrorStrategy of the event. Always returns event.ErrorStrategyStop.
 func (e *InstallEvent) ErrorStrategy() event.ErrorStrategy {
 	return event.ErrorStrategyStop
+}
+
+// MaintenanceEvent fires when the server is free to do maintenance.
+//
+// This includes removing old data, rebuild/warm caches, rebuild materialized views etc.
+type MaintenanceEvent struct {
+	r *http.Request
+}
+
+// NewMaintenanceEvent constructs a MaintenanceEvent.
+func NewMaintenanceEvent(r *http.Request) *MaintenanceEvent {
+	return &MaintenanceEvent{
+		r: r,
+	}
+}
+
+// Request returns the current request.
+func (e *MaintenanceEvent) Request() *http.Request {
+	return e.r
+}
+
+// Name of the event. Always returns EventMaintenance.
+func (e *MaintenanceEvent) Name() string {
+	return EventMaintenance
+}
+
+// ErrorStrategy of the event. Always returns event.ErrorStrategyAggregate.
+func (e *MaintenanceEvent) ErrorStrategy() event.ErrorStrategy {
+	return event.ErrorStrategyAggregate
 }
