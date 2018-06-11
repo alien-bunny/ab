@@ -120,6 +120,10 @@ var _ server.Service = &testService{}
 type testService struct {
 }
 
+func (s *testService) Name() string {
+	return "test"
+}
+
 func (s *testService) Register(srv *server.Server) error {
 	srv.GetF("/test", func(w http.ResponseWriter, r *http.Request) {
 		rows, err := ab.GetDB(r).Query("SELECT * FROM test ORDER BY a")
@@ -180,12 +184,13 @@ func (s *testService) Register(srv *server.Server) error {
 	return nil
 }
 
-func (s *testService) SchemaInstalled(conn db.DB) bool {
-	return db.TableExists(conn, "test")
-}
-
-func (s *testService) SchemaSQL() string {
-	return "CREATE TABLE test(a serial NOT NULL PRIMARY KEY, b text NOT NULL);"
+func (s *testService) DBSchema() db.SchemaGenerations {
+	return db.DefineSchemaGenerations(
+		func(conn db.DB) error {
+			_, err := conn.Exec("CREATE TABLE test(a serial NOT NULL PRIMARY KEY, b text NOT NULL);")
+			return err
+		},
+	)
 }
 
 type testDecode struct {

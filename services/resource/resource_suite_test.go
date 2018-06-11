@@ -80,27 +80,24 @@ type testResourceControllerDelegate struct {
 	conn db.DB
 }
 
-func (t *testResourceControllerDelegate) GetName() string {
+func (t *testResourceControllerDelegate) Name() string {
 	return "test"
 }
 
-func (t *testResourceControllerDelegate) GetTables() []string {
-	return []string{"testresource"}
-}
-
-func (t *testResourceControllerDelegate) GetSchemaSQL() string {
-	return `
-		CREATE TABLE testresource(
-			uuid uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
-			a text NOT NULL,
-			b int NOT NULL,
-			updated timestamp with time zone NOT NULL
-		);
-	`
-}
-
-func (t *testResourceControllerDelegate) SchemaInstalled(conn db.DB) bool {
-	return true
+func (t *testResourceControllerDelegate) DBSchema() db.SchemaGenerations {
+	return db.DefineSchemaGenerations(
+		func(conn db.DB) error {
+			_, err := conn.Exec(`
+				CREATE TABLE testresource(
+					uuid uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
+					a text NOT NULL,
+					b int NOT NULL,
+					updated timestamp with time zone NOT NULL
+				);
+			`)
+			return err
+		},
+	)
 }
 
 func (t *testResourceControllerDelegate) List(r *http.Request, start, limit int) ([]resource.Resource, error) {

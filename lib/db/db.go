@@ -24,6 +24,29 @@ import (
 	"github.com/lib/pq"
 )
 
+type DBSchemaProvider interface {
+	Name() string
+	DBSchema() SchemaGenerations
+}
+
+type Schema func(conn DB) error
+
+func DefineSchemaGenerations(gens ...Schema) SchemaGenerations {
+	return SchemaGenerations(gens)
+}
+
+type SchemaGenerations []Schema
+
+func (g SchemaGenerations) UpgradeFrom(last int, conn DB) (int, error) {
+	for next := last + 1; next < len(g); next++ {
+		if err := g[next](conn); err != nil {
+			return next - 1, err
+		}
+	}
+
+	return len(g) - 1, nil
+}
+
 // DB is an abstraction over *sql.DB and *sql.Tx
 type DB interface {
 	Exec(string, ...interface{}) (sql.Result, error)
@@ -47,28 +70,6 @@ func RetryDBConn(connectString string, tries uint) *sql.DB {
 	}
 
 	return conn
-}
-
-// TableExists checks if a table exists in the database.
-func TableExists(db DB, table string) bool {
-	var found bool
-	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND c.relkind = 'r');", table).Scan(&found)
-	if err != nil {
-		panic(err)
-	}
-
-	return found
-}
-
-// ConstraintExists checks if a constraint exists in the database
-func ConstraintExists(db DB, constraint string) bool {
-	var found bool
-	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_constraint WHERE conname = $1)", constraint).Scan(&found)
-	if err != nil {
-		panic(err)
-	}
-
-	return found
 }
 
 // ConvertDBError converts an error with conv if that error is *pq.Error.

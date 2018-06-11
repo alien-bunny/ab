@@ -52,11 +52,11 @@ func (c *CSRFMiddleware) Wrap(next http.Handler) http.Handler {
 
 			userToken := r.Header.Get("X-CSRF-Token")
 
-			logmw.Debug(r, csrfComponent, logmw.CategoryValidationFailure).Log(
-				"usertoken", userToken,
-				"token", token,
-			)
 			if userToken == "" || userToken != token {
+				logmw.Debug(r, csrfComponent, logmw.CategoryValidationFailure).Log(
+					"usertoken", userToken,
+					"token", token,
+				)
 				errors.Fail(http.StatusForbidden, errors.New("CSRF token validation failed"))
 			}
 		}
@@ -90,11 +90,11 @@ func (c *CSRFGetMiddleware) Wrap(next http.Handler) http.Handler {
 
 		userToken := r.URL.Query().Get(c.urlParam)
 
-		logmw.Debug(r, csrfGetComponent, logmw.CategoryValidationFailure).Log(
-			"csrfusertoken", userToken,
-			"csrftoken", token,
-		)
 		if userToken == "" || userToken != token {
+			logmw.Debug(r, csrfGetComponent, logmw.CategoryValidationFailure).Log(
+				"csrfusertoken", userToken,
+				"csrftoken", token,
+			)
 			errors.Fail(http.StatusForbidden, errors.New("CSRF token validation failed"))
 		}
 

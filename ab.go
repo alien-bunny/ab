@@ -350,7 +350,7 @@ func Pet(conf *config.Store, serverNamespace string, logger log.Logger, dispatch
 		setupErrorMiddleware,
 		setupRenderMiddleware,
 		setupCSRFMiddleware,
-		setupDBMiddleware,
+		setupDBMiddleware(s, dispatcher),
 		setupCryptMiddleware,
 	}
 
@@ -538,13 +538,17 @@ func setupCSRFMiddleware(serverConfig Config) (middleware.Middleware, error) {
 	return securitymw.NewCSRFMiddleware(), nil
 }
 
-func setupDBMiddleware(serverConfig Config) (middleware.Middleware, error) {
-	dbMiddleware := dbmw.NewMiddleware()
-	dbMiddleware.MaxIdleConnections = serverConfig.DB.MaxIdleConn
-	dbMiddleware.MaxOpenConnections = serverConfig.DB.MaxOpenConn
-	dbMiddleware.ConnectionMaxLifetime = time.Duration(serverConfig.DB.ConnectionMaxLifetime) * time.Second
+func setupDBMiddleware(s *server.Server, dispatcher *event.Dispatcher) func(serverConfig Config) (middleware.Middleware, error) {
+	return func(serverConfig Config) (middleware.Middleware, error) {
+		dbMiddleware := dbmw.NewMiddleware(s)
+		dbMiddleware.MaxIdleConnections = serverConfig.DB.MaxIdleConn
+		dbMiddleware.MaxOpenConnections = serverConfig.DB.MaxOpenConn
+		dbMiddleware.ConnectionMaxLifetime = time.Duration(serverConfig.DB.ConnectionMaxLifetime) * time.Second
 
-	return dbMiddleware, nil
+		dispatcher.Subscribe(EventInstall, dbMiddleware)
+
+		return dbMiddleware, nil
+	}
 }
 
 func setupCryptMiddleware(serverConfig Config) (middleware.Middleware, error) {
@@ -571,8 +575,6 @@ func maybeSetupAdmin(s *server.Server, adminKey string) {
 
 		if s.IsMaster() {
 			s.GetF("/install", func(w http.ResponseWriter, r *http.Request) {
-				conn := dbmw.GetConnection(r)
-				s.InstallServices(conn)
 				errs := eventmw.GetDispatcher(r).Dispatch(NewInstallEvent(r))
 				MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 			}, keymw)

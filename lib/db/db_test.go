@@ -19,15 +19,37 @@ import (
 
 	"github.com/alien-bunny/ab/lib/abtest"
 	"github.com/alien-bunny/ab/lib/db"
+	"github.com/alien-bunny/ab/lib/errors"
 	"github.com/alien-bunny/ab/middlewares/dbmw"
+	"github.com/lib/pq"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
+const errmsg = `
+	Severity         ERROR
+	Code             42P07
+	Message          relation "migrationtest" already exists
+	Detail           
+	Hint             
+	Position         
+	InternalPosition 
+	InternalQuery    
+	Where            
+	Schema           
+	Table            
+	Column           
+	DataTypeName     
+	Constraint       
+	File             heap.c
+	Line             1067
+	Routine          heap_create_with_catalog
+`
+
 var _ = Describe("DB", func() {
 	logger := abtest.GetLogger()
 	conf := abtest.GetConfig(logger, "db")
-	conf.MaybeRegisterSchema(dbmw.NewMiddleware())
+	conf.MaybeRegisterSchema(dbmw.NewMiddleware(nil))
 	dbconfig, err := conf.Get("db").Get("database")
 	connstr := dbconfig.(dbmw.DBConfig).ConnectionString
 
@@ -41,9 +63,8 @@ var _ = Describe("DB", func() {
 
 		BeforeEach(func() {
 			By("Connecting to the database")
-			var err error
-			conn, err = db.ConnectToDB(connstr)
-			Expect(err).To(BeNil())
+			smw := abtest.NewSchemaMiddleware()
+			conn = abtest.Connect(smw.GetSchemaName())
 			Expect(conn).NotTo(BeNil())
 		})
 
@@ -51,29 +72,87 @@ var _ = Describe("DB", func() {
 			Expect(conn.(*sql.DB).Close()).To(BeNil())
 		})
 
-		It("should not detect a table that does not exists", func() {
-			exists := db.TableExists(conn, "zxcvbn")
-			Expect(exists).To(BeFalse())
+		It("should be able to migrate simple instructions", func() {
+			gens := db.DefineSchemaGenerations(
+				func(conn db.DB) error {
+					_, err := conn.Exec(`
+						CREATE TABLE libdbtest(
+							uuid uuid NOT NULL DEFAULT uuid_generate_v4(),
+							CONSTRAINT libdbtest_pkey PRIMARY KEY (uuid)
+						);
+					`)
+					return err
+				},
+				func(conn db.DB) error {
+					_, err := conn.Exec(`
+						INSERT INTO libdbtest(uuid) VALUES(uuid_generate_v4());
+					`)
+					return err
+				},
+				func(conn db.DB) error {
+					cnt := 0
+					err := conn.QueryRow(`SELECT COUNT(*) FROM libdbtest;`).Scan(&cnt)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(cnt).To(Equal(1))
+					return nil
+				},
+				func(conn db.DB) error {
+					_, err := conn.Exec(`DELETE FROM libdbtest;`)
+					return err
+				},
+			)
+
+			version, err := gens.UpgradeFrom(-1, conn)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(version).To(Equal(len(gens) - 1))
 		})
 
-		It("should detect existing tables and constraints", func() {
-			By("creating a table with a primary key")
-			_, err := conn.Exec(`
-				CREATE TABLE libdbtest(
-					uuid uuid NOT NULL DEFAULT uuid_generate_v4(),
-					CONSTRAINT libdbtest_pkey PRIMARY KEY (uuid)
-				);
-			`)
-			Expect(err).To(BeNil())
-			defer conn.Exec("DROP TABLE libdbtest;")
+		It("should handle migration errors", func() {
+			gens := db.DefineSchemaGenerations(
+				func(conn db.DB) error {
+					_, err := conn.Exec(`
+						CREATE TABLE migrationtest(
+							uuid uuid NOT NULL DEFAULT uuid_generate_v4(),
+							CONSTRAINT migrationtest_pkey PRIMARY KEY(uuid)
+						);
+					`)
+					return err
+				},
+				func(conn db.DB) error {
+					_, err := conn.Exec(`
+						CREATE TABLE migrationtest();
+					`)
+					return err
+				},
+				func(conn db.DB) error {
+					_, err := conn.Exec(`
+						DROP TABLE migrationtest();
+					`)
+					return err
+				},
+			)
 
-			By("checking that the table exists")
-			exists := db.TableExists(conn, "libdbtest")
-			Expect(exists).To(BeTrue())
+			version, err := gens.UpgradeFrom(-1, conn)
+			Expect(err).To(HaveOccurred())
+			Expect(db.DBErrorToVerboseString(err.(*pq.Error))).To(Equal(errmsg))
+			Expect(version).To(Equal(0))
+			Expect(db.ConvertDBError(err, db.ConstraintErrorConverter(map[string]string{
+				"": "asdf",
+			})).(errors.Error).UserError(nil)).To(Equal("asdf"))
+			err.(*pq.Error).Constraint = "aaa"
+			Expect(db.ConvertDBError(err, db.ConstraintErrorConverter(map[string]string{
+				"": "asdf",
+			})).(errors.Error).UserError(nil)).To(BeZero())
 
-			By("checking that the constraint exists")
-			exists = db.ConstraintExists(conn, "libdbtest_pkey")
-			Expect(exists).To(BeTrue())
+			_, err = conn.Exec(`DELETE FROM migrationtest;`)
+			Expect(err).NotTo(HaveOccurred())
 		})
+	})
+})
+
+var _ = Describe("Error converter", func() {
+	It("should return the error when it is not a db error", func() {
+		err := errors.New("asdf")
+		Expect(db.ConvertDBError(err, nil)).To(Equal(err))
 	})
 })

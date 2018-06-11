@@ -24,7 +24,9 @@ import (
 	"github.com/alien-bunny/ab/lib/config"
 	"github.com/alien-bunny/ab/lib/db"
 	"github.com/alien-bunny/ab/lib/errors"
+	"github.com/alien-bunny/ab/lib/event"
 	"github.com/alien-bunny/ab/lib/middleware"
+	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/lib/util"
 	"github.com/alien-bunny/ab/middlewares/configmw"
 )
@@ -51,10 +53,20 @@ func connect(connectString string, maxIdleConnections, maxOpenConnections int, c
 
 type DBConfig struct {
 	ConnectionString string
+	SchemaVersions   map[string]int
+}
+
+func (c DBConfig) SchemaVersion(name string) int {
+	if found, ok := c.SchemaVersions[name]; ok {
+		return found
+	}
+
+	return -1
 }
 
 var _ middleware.Middleware = &Middleware{}
 var _ config.ConfigSchemaProvider = &Middleware{}
+var _ event.Subscriber = &Middleware{}
 
 type Middleware struct {
 	MaxIdleConnections    int
@@ -63,10 +75,13 @@ type Middleware struct {
 
 	mtx         sync.Mutex
 	connections map[string]*sql.DB
+	server      *server.Server
 }
 
-func NewMiddleware() *Middleware {
-	return &Middleware{}
+func NewMiddleware(s *server.Server) *Middleware {
+	return &Middleware{
+		server: s,
+	}
 }
 
 func (m *Middleware) ensureConnectionsMap() {
@@ -140,6 +155,47 @@ func (m *Middleware) ConfigSchema() map[string]reflect.Type {
 	return map[string]reflect.Type{
 		"database": reflect.TypeOf(DBConfig{}),
 	}
+}
+
+func (m *Middleware) Handle(e event.Event) error {
+	r := e.(requester).Request()
+	confInterface, saver, err := configmw.GetWritableConfig(r).GetWritable("database")
+	if err != nil {
+		return err
+	}
+	if confInterface == nil {
+		return errors.New("database config not found")
+	}
+
+	conf := confInterface.(DBConfig)
+	if conf.SchemaVersions == nil {
+		conf.SchemaVersions = make(map[string]int)
+	}
+
+	conn := GetConnection(r)
+
+	for _, svc := range m.server.GetServices() {
+		if p, ok := svc.(db.DBSchemaProvider); ok {
+			name := p.Name()
+			version := conf.SchemaVersion(name)
+			newVersion, err := p.DBSchema().UpgradeFrom(version, conn)
+
+			conf.SchemaVersions[name] = newVersion
+			if errs := saver.Save(conf); errs != nil {
+				return errs
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+type requester interface {
+	Request() *http.Request
 }
 
 var _ middleware.Middleware = &TransactionMiddleware{}

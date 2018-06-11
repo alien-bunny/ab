@@ -25,7 +25,6 @@ import (
 	"path/filepath"
 
 	"github.com/alien-bunny/ab/lib/config"
-	"github.com/alien-bunny/ab/lib/db"
 	"github.com/alien-bunny/ab/lib/errors"
 	"github.com/alien-bunny/ab/lib/log"
 	"github.com/alien-bunny/ab/lib/middleware"
@@ -39,12 +38,16 @@ const paramKey = "abparam"
 
 // Service is a collection of endpoints that logically belong together or operate on the same part of the database schema.
 type Service interface {
+	// Name returns the name of this service instance.
+	Name() string
 	// Register the Service endpoints
 	Register(*Server) error
-	// SchemaInstalled checks if the schema is installed
-	SchemaInstalled(db.DB) bool
-	// SchemaSQL constructs SQL string to install the schema
-	SchemaSQL() string
+}
+
+type ServiceName string
+
+func (n ServiceName) Name() string {
+	return string(n)
 }
 
 // Server is the main server struct.
@@ -276,29 +279,21 @@ func (s *Server) AddFile(path, file string) *Server {
 	return s
 }
 
-func (s *Server) InstallServices(conn db.DB) {
-	if !s.IsMaster() {
-		return
-	}
-
-	for _, svc := range s.services {
-		if !svc.SchemaInstalled(conn) {
-			queries := svc.SchemaSQL()
-			_, err := conn.Exec(queries)
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
-}
-
 // RegisterService adds a service on the server.
 //
 // See the Service interface for more information.
 func (s *Server) RegisterService(svc Service) {
+	if svc.Name() == "" {
+		panic("empty service name")
+	}
+
 	s.services = append(s.services, svc)
 	s.config.MaybeRegisterSchema(svc)
 	svc.Register(s)
+}
+
+func (s *Server) GetServices() []Service {
+	return s.services[:]
 }
 
 // StartHTTPS starts the server.

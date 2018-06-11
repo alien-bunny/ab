@@ -31,7 +31,7 @@ var _ = Describe("DB Middleware", func() {
 	smw := abtest.NewSchemaMiddleware()
 
 	_, conf, cmw := abtest.SetupConfigMiddleware()
-	mw := dbmw.NewMiddleware()
+	mw := dbmw.NewMiddleware(nil)
 	mw.ConnectionMaxLifetime = 120 * time.Second
 	mw.MaxOpenConnections = 1
 	mw.MaxIdleConnections = 1

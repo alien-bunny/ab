@@ -18,6 +18,7 @@ import (
 	"net/http"
 
 	"github.com/alien-bunny/ab/lib/abtest"
+	"github.com/alien-bunny/ab/lib/render"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -42,3 +43,15 @@ func testCases(clientType string, factory func() *abtest.TestClient) {
 		})
 	})
 }
+
+var _ = Describe("test JSON prefix", func() {
+	It("should not consume any data when JSON prefix is off", func() {
+		render.JSONPrefix = false
+		defer func() { render.JSONPrefix = true }()
+		c := clientFactory()
+		c.Request("POST", "/api/posttest", nil, nil, func(resp *http.Response) {
+			td := testdata{}
+			c.AssertJSON(resp, &td, Equal(&posttest))
+		}, http.StatusOK)
+	})
+})

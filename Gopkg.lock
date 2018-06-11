@@ -10,8 +10,8 @@
 [[projects]]
   name = "github.com/fatih/color"
   packages = ["."]
-  revision = "507f6050b8568533fb3f5504de8e5205fa62a114"
-  version = "v1.6.0"
+  revision = "5b77d2a35fb0ede96d138fc9a99f5c9b6aef11b4"
+  version = "v1.7.0"
 
 [[projects]]
   name = "github.com/go-kit/kit"
@@ -41,13 +41,13 @@
     "httputil",
     "httputil/header"
   ]
-  revision = "416d5fc8c9c85e9ec9252a70d01e069f4b287ff0"
+  revision = "a154dc8b46f4e499724277f2ff2e9b41b959198d"
 
 [[projects]]
   name = "github.com/imdario/mergo"
   packages = ["."]
-  revision = "9d5f1277e9a8ed20c3684bda8fde67c05628518c"
-  version = "v0.3.4"
+  revision = "9316a62528ac99aaecb4e47eadd6dc8aa6533d58"
+  version = "v0.3.5"
 
 [[projects]]
   name = "github.com/inconshreveable/mousetrap"
@@ -74,13 +74,7 @@
     ".",
     "oid"
   ]
-  revision = "d34b9ff171c21ad295489235aec8b6626023cd04"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/manveru/faker"
-  packages = ["."]
-  revision = "9fbc68a78c4dbc7914e1a23f88f126bea4383b97"
+  revision = "90697d60dd844d5ef6ff15135d0203f65d2f53b8"
 
 [[projects]]
   name = "github.com/mattn/go-colorable"
@@ -95,7 +89,6 @@
   version = "v0.0.3"
 
 [[projects]]
-  branch = "master"
   name = "github.com/onsi/ginkgo"
   packages = [
     ".",
@@ -118,7 +111,8 @@
     "reporters/stenographer/support/go-isatty",
     "types"
   ]
-  revision = "68f622cf9b05e245b580cda6debc2b1bd3094c97"
+  revision = "fa5fabab2a1bfbd924faf4c067d07ae414e2aedf"
+  version = "v1.5.0"
 
 [[projects]]
   name = "github.com/onsi/gomega"
@@ -138,14 +132,14 @@
     "matchers/support/goraph/util",
     "types"
   ]
-  revision = "003f63b7f4cff3fc95357005358af2de0f5fe152"
-  version = "v1.3.0"
+  revision = "62bff4df71bdbc266561a0caee19f0594b17c240"
+  version = "v1.4.0"
 
 [[projects]]
-  branch = "master"
   name = "github.com/pelletier/go-toml"
   packages = ["."]
-  revision = "66540cf1fcd2c3aee6f6787dfa32a6ae9a870f12"
+  revision = "c01d1270ff3e442a8a57cddc1c92dc1138598194"
+  version = "v1.2.0"
 
 [[projects]]
   name = "github.com/satori/go.uuid"
@@ -156,20 +150,14 @@
 [[projects]]
   name = "github.com/spf13/cobra"
   packages = ["."]
-  revision = "a1f051bc3eba734da4772d60e2d677f47cf93ef4"
-  version = "v0.0.2"
+  revision = "ef82de70bb3f60c65fb8eebacbb2d122ef517385"
+  version = "v0.0.3"
 
 [[projects]]
   name = "github.com/spf13/pflag"
   packages = ["."]
   revision = "583c0c0531f06d5278b7d917446061adc344b5cd"
   version = "v1.0.1"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/surge/porter2"
-  packages = ["."]
-  revision = "56e4718818e8dc4ea5ba6348402fc7661863732a"
 
 [[projects]]
   branch = "master"
@@ -186,7 +174,7 @@
     "scrypt",
     "ssh"
   ]
-  revision = "d6449816ce06963d9d136eee5a56fca5b0616e7e"
+  revision = "8ac0e0d97ce45cd83d1d7243c060cb8461dda5e9"
 
 [[projects]]
   branch = "master"
@@ -198,13 +186,13 @@
     "idna",
     "publicsuffix"
   ]
-  revision = "61147c48b25b599e5b561d2e9c4f3e1ef489ca41"
+  revision = "db08ff08e8622530d9ed3a0e8ac279f6d4c02196"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "2281fa97ef7b0c26324634d5a22f04babdac8713"
+  revision = "bff228c7b664c5fce602223a05fb708fd8654986"
 
 [[projects]]
   branch = "master"
@@ -239,7 +227,7 @@
     "unicode/norm",
     "unicode/rangetable"
   ]
-  revision = "7922cc490dd5a7dbaa7fd5d6196b49db59ac042f"
+  revision = "5c1cf69b5978e5a34c5f9ba09a83e56acc4b7877"
 
 [[projects]]
   name = "gopkg.in/yaml.v2"
@@ -250,6 +238,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a41072ec24b407fb2494c3b5d9431ba3d12ad2d7ceedf4ccb473c2531395bf29"
+  inputs-digest = "baa3be46d4bc0a3cdd33c1c0042b1a0d6008b90f82f66c3c140b2c2108a9e778"
   solver-name = "gps-cdcl"
   solver-version = 1

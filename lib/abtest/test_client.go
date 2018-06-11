@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/alien-bunny/ab/lib/render"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
 )
@@ -149,6 +150,10 @@ func (tc *TestClient) GetToken() {
 
 // ConsumePrefix consumes the JSONPrefix from the response body.
 func (tc *TestClient) ConsumePrefix(r *http.Response) bool {
+	if !render.JSONPrefix {
+		return true
+	}
+
 	prefix := make([]byte, 6)
 	_, err := io.ReadFull(r.Body, prefix)
 	if tc.panic {

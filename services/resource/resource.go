@@ -134,16 +134,7 @@ type ResourceFormatter interface {
 
 // ResourceControllerDelegate customizes a ResourceController.
 type ResourceControllerDelegate interface {
-	// GetName returns machine name of the resource
-	GetName() string
-	// GetTables returns a list of tables that this resource uses.
-	// These will be automatically checked on service install.
-	GetTables() []string
-	// GetSchemaSQL returns the full schema for the resource.
-	GetSchemaSQL() string
-	// SchemaInstalled can be used to make extra checks to
-	// ensure that the complete schema is installed.
-	SchemaInstalled(db.DB) bool
+	db.DBSchemaProvider
 }
 
 var _ server.Service = &ResourceController{}
@@ -188,9 +179,9 @@ func NewResourceController(dispatcher *event.Dispatcher, delegate ResourceContro
 	}
 }
 
-// GetName returns the name of this ResourceController.
-func (res *ResourceController) GetName() string {
-	return res.delegate.GetName()
+// ServiceName returns the name of this ResourceController.
+func (res *ResourceController) Name() string {
+	return res.delegate.Name()
 }
 
 // List enables the listing endpoint.
@@ -250,7 +241,7 @@ func (res *ResourceController) listHandler(w http.ResponseWriter, r *http.Reques
 		Items:    list,
 		PageSize: limit,
 		Page:     start / limit,
-		BasePath: "/api/" + res.delegate.GetName(),
+		BasePath: "/api/" + res.delegate.Name(),
 	}
 
 	errs = res.dispatcher.Dispatch(NewAfterResourceListEvent(r, reslist))
@@ -312,7 +303,7 @@ func (res *ResourceController) putHandler(w http.ResponseWriter, r *http.Request
 	errs := res.dispatcher.Dispatch(NewResourceCRUDEvent(EventBeforeResourcePut, r, d))
 	ab.MaybeFail(http.StatusInternalServerError, errors.NewMultiError(errs))
 
-	if res.putDelegate.GetID(d) != id {
+	if res.putDelegate.GetID(d) != "" && res.putDelegate.GetID(d) != id {
 		ab.Fail(http.StatusBadRequest, nil)
 	}
 
@@ -362,7 +353,7 @@ func (res *ResourceController) Register(srv *server.Server) error {
 		return ErrNoEndpoints
 	}
 
-	base := "/api/" + res.delegate.GetName()
+	base := "/api/" + res.delegate.Name()
 	id := base + "/:id"
 
 	if res.listDelegate != nil {
@@ -411,16 +402,6 @@ func (res *ResourceController) Register(srv *server.Server) error {
 	return nil
 }
 
-func (res *ResourceController) SchemaInstalled(conn db.DB) bool {
-	installed := true
-
-	for _, table := range res.delegate.GetTables() {
-		installed = installed && db.TableExists(conn, table)
-	}
-
-	return installed && res.delegate.SchemaInstalled(conn)
-}
-
-func (res *ResourceController) SchemaSQL() string {
-	return res.delegate.GetSchemaSQL()
+func (res *ResourceController) DBSchema() db.SchemaGenerations {
+	return res.delegate.DBSchema()
 }
