@@ -29,12 +29,14 @@ import (
 	"github.com/alien-bunny/ab/lib/server"
 	"github.com/alien-bunny/ab/lib/util"
 	"github.com/alien-bunny/ab/middlewares/configmw"
+	"github.com/alien-bunny/ab/middlewares/logmw"
 )
 
 const (
 	MiddlewareDependencyDB = "*dbmw.Middleware"
 
-	dbConnectionKey = "abdb"
+	dbConnectionKey             = "abdb"
+	logComponentSchemaMigration = "schema migration"
 )
 
 // GetConnection returns DB from the request context.
@@ -180,12 +182,24 @@ func (m *Middleware) Handle(e event.Event) error {
 			version := conf.SchemaVersion(name)
 			newVersion, err := p.DBSchema().UpgradeFrom(version, conn)
 
+			logmw.Debug(r, logComponentSchemaMigration, "install").Log(
+				"upgrading schema", name,
+				"start", version,
+				"current", newVersion,
+			)
+
 			conf.SchemaVersions[name] = newVersion
 			if errs := saver.Save(conf); errs != nil {
+				logmw.Error(r, logComponentSchemaMigration, "install").Log(
+					"config-error", errs,
+				)
 				return errs
 			}
 
 			if err != nil {
+				logmw.Error(r, logComponentSchemaMigration, "install").Log(
+					"error", err,
+				)
 				return err
 			}
 		}
