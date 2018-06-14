@@ -52,15 +52,13 @@ func (d *DirectoryConfigProvider) basenameForKey(key string) string {
 	return filepath.FromSlash(path.Join(d.base, key))
 }
 
-func (d *DirectoryConfigProvider) exists(key string, alsoWritable bool) (FileType, string) {
+func (d *DirectoryConfigProvider) exists(key string) (FileType, string) {
 	name := d.basenameForKey(key)
 	for _, t := range d.fileTypes {
 		for _, ext := range t.Extensions() {
 			fn := name + "." + ext
-			if info, err := os.Stat(fn); err == nil {
-				if !alsoWritable || (info.Mode()&0222 != 0) {
-					return t, fn
-				}
+			if _, err := os.Stat(fn); err == nil {
+				return t, fn
 			}
 		}
 	}
@@ -69,12 +67,12 @@ func (d *DirectoryConfigProvider) exists(key string, alsoWritable bool) (FileTyp
 }
 
 func (d *DirectoryConfigProvider) Has(key string) bool {
-	_, fn := d.exists(key, false)
+	_, fn := d.exists(key)
 	return fn != ""
 }
 
 func (d *DirectoryConfigProvider) Unmarshal(key string, v interface{}) error {
-	ft, fn := d.exists(key, false)
+	ft, fn := d.exists(key)
 	f, err := os.Open(fn)
 	if err != nil {
 		return err
@@ -85,26 +83,14 @@ func (d *DirectoryConfigProvider) Unmarshal(key string, v interface{}) error {
 }
 
 func (d *DirectoryConfigProvider) CanSave(key string) bool {
-	if d.readOnly {
-		return false
-	}
-
-	if _, fn := d.exists(key, true); fn != "" {
-		return true
-	}
-
-	if info, err := os.Stat(d.base); err == nil {
-		return info.Mode()&0222 != 0
-	}
-
-	return false
+	return !d.readOnly
 }
 
 func (d *DirectoryConfigProvider) Save(key string, v interface{}) error {
 	var f *os.File
 	var err error
 
-	ft, fn := d.exists(key, true)
+	ft, fn := d.exists(key)
 	if fn == "" { // file does not exists
 		if len(d.fileTypes) == 0 {
 			return errors.New("no configured file type for this directory config provider")

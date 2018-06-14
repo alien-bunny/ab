@@ -281,14 +281,20 @@ func (c *Collection) find(key string, returnType reflect.Type) (interface{}, err
 
 func (c *Collection) set(key string, v interface{}) error {
 	var err error
+	var saved bool
 	c.mtx.Lock()
 	for _, provider := range c.providers {
 		if wp, ok := provider.(WritableProvider); ok && wp.CanSave(key) {
 			err = wp.Save(key, v)
+			saved = true
 			break
 		}
 	}
 	c.mtx.Unlock()
+
+	if !saved {
+		return errors.New("failed to save config")
+	}
 
 	if err == nil {
 		c.putToCache(key, v)

@@ -113,6 +113,27 @@ var _ = Describe("Writable config", func() {
 	)
 })
 
+var _ = Describe("Only readonly providers", func() {
+	c := config.NewStore(log.NewDevLogger(ioutil.Discard))
+	c.RegisterSchema("test.*", reflect.TypeOf(test{}))
+
+	collection := config.NewCollection()
+	dp := config.NewDirectoryConfigProvider("fixtures/config", true)
+	registerFileTypes(dp)
+	collection.AddProviders(dp)
+
+	c.AddCollection("config", collection)
+
+	It("should error when no providers can save the config", func() {
+		ti, saver, err := c.GetWritable("config").GetWritable("test.0")
+		t := ti.(test)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = saver.Save(t)
+		Expect(err).To(HaveOccurred())
+	})
+})
+
 var _ = Describe("Collection loaders", func() {
 	c := config.NewStore(log.NewDevLogger(ioutil.Discard))
 	c.RegisterSchema("test", reflect.TypeOf(test{}))
