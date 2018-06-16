@@ -292,13 +292,15 @@ func (c *Collection) set(key string, v interface{}) error {
 	}
 	c.mtx.Unlock()
 
+	if err != nil {
+		return err
+	}
+
 	if !saved {
 		return errors.New("failed to save config")
 	}
 
-	if err == nil {
-		c.putToCache(key, v)
-	}
+	c.putToCache(key, v)
 
 	return nil
 }

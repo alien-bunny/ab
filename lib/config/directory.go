@@ -99,7 +99,7 @@ func (d *DirectoryConfigProvider) Save(key string, v interface{}) error {
 		ft = d.fileTypes[0]
 		f, err = os.Create(name)
 	} else { // file exists
-		f, err = os.Open(fn)
+		f, err = os.OpenFile(fn, os.O_RDWR, 0)
 	}
 	if err != nil {
 		return err

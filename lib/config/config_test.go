@@ -108,6 +108,10 @@ var _ = Describe("Writable config", func() {
 			t := saveValue(c, "qwer")
 			checkValue(tmpdir, ft, t)
 			collection.ClearCache()
+
+			t = saveValue(c, "asdf")
+			checkValue(tmpdir, ft, t)
+			collection.ClearCache()
 		},
 		entries...,
 	)
@@ -130,6 +134,27 @@ var _ = Describe("Only readonly providers", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		err = saver.Save(t)
+		Expect(err).To(HaveOccurred())
+	})
+})
+
+var _ = Describe("Config save error", func() {
+	c := config.NewStore(log.NewDevLogger(ioutil.Discard))
+	c.RegisterSchema("test.*", reflect.TypeOf(test{}))
+
+	collection := config.NewCollection()
+	collection.AddProviders(&errorProvider{
+		OnRead:  false,
+		OnWrite: true,
+	})
+
+	c.AddCollection("config", collection)
+
+	It("should return the error", func() {
+		ti, saver, err := c.GetWritable("config").GetWritable("test.0")
+		Expect(err).NotTo(HaveOccurred())
+
+		err = saver.Save(ti)
 		Expect(err).To(HaveOccurred())
 	})
 })

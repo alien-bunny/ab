@@ -15,8 +15,10 @@
 package config_test
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/alien-bunny/ab/lib/config"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -24,4 +26,35 @@ import (
 func TestConfig(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Config Suite")
+}
+
+var _ config.WritableProvider = &errorProvider{}
+
+type errorProvider struct {
+	OnRead  bool
+	OnWrite bool
+}
+
+func (p *errorProvider) CanSave(key string) bool {
+	return true
+}
+
+func (p *errorProvider) Save(key string, v interface{}) error {
+	if p.OnWrite {
+		return errors.New("")
+	}
+
+	return nil
+}
+
+func (p *errorProvider) Has(key string) bool {
+	return true
+}
+
+func (p *errorProvider) Unmarshal(key string, v interface{}) error {
+	if p.OnRead {
+		return errors.New("")
+	}
+
+	return nil
 }
